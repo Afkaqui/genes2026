@@ -1,26 +1,56 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Definición de la Identidad Visual de GenesPerú */
+@theme {
+  --color-genes-green: #759C30;
+  --color-genes-dark: #1a1a1a;
+  --color-genes-light: #f8fafc;
+
+  --font-sans: var(--font-montserrat), ui-sans-serif, system-ui;
+
+  --breakpoint-xs: 480px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* Capa Base: Reseteos y optimizaciones globales */
+@layer base {
+  html {
+    @apply scroll-smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body {
+    @apply bg-white text-slate-900 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Selección de texto con el color institucional */
+  ::selection {
+    @apply bg-genes-green/30 text-genes-dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Utilidades personalizadas para el contenido de sostenibilidad */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glass-effect {
+    @apply bg-white/70 backdrop-blur-md border border-white/20;
+  }
+
+  /* Degradado suave para secciones de impacto */
+  .bg-gradient-genes {
+    background: radial-gradient(circle at center, var(--color-genes-green) 0%, transparent 70%);
+    opacity: 0.05;
+  }
+
+  /* Ocultar scrollbar en carruseles */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

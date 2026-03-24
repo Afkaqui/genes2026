@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000,3001 -ErrorAction SilentlyContinue\")",
+      "Bash(bash -c \"PORT=3002 npm run dev\")",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(cygpath -w /c/nvm4w/nodejs/node.exe)"
+    ]
+  }
+}
