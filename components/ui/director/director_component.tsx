@@ -13,10 +13,10 @@ import DIRECTOR8 from '@/images/autoridades/img008_Rosa_Karina.jpeg';
 export const DirectorComponent = () => {
   const directores = [
     {
-      nombre: "Eduardo Jose Noriega Campos",
-      cargo: "DIRECTOR GENERAL",
-      imagen: DIRECTOR1,
-      enlace: "https://www.linkedin.com/in/ingeduardonoriegaperu"
+      nombre: "Mara Isabel Delgado Vaca Guzman",
+      cargo: "DIRECTOR EJECUTIVO",
+      imagen: DIRECTOR7,
+      enlace: "https://www.linkedin.com/in/idvg-sostenibilidad/"
     },
     {
       nombre: "Ada Liccet Teresa Suarez Amapanqui",
@@ -49,10 +49,10 @@ export const DirectorComponent = () => {
       enlace: "https://www.linkedin.com/in/miguel-quispe-2b3a4681/"
     },
     {
-      nombre: "Mara Isabel Delgado Vaca Guzman",
-      cargo: "DIRECTOR RELACIONES INTERINSTITUCIONALES",
-      imagen: DIRECTOR7,
-      enlace: "https://www.linkedin.com/in/idvg-sostenibilidad/"
+      nombre: "Eduardo Jose Noriega Campos",
+      cargo: "DIRECTOR FUNDADOR VOLUNTARIO",
+      imagen: DIRECTOR1,
+      enlace: "https://www.linkedin.com/in/ingeduardonoriegaperu"
     },
     {
       nombre: "Rosa Karina Pinasco Vela",
@@ -80,6 +80,9 @@ export const DirectorComponent = () => {
             transformación sostenible del país. Su labor se centra en fortalecer capacidades,
             fomentar la innovación y articular esfuerzos para promover emprendimientos que respeten
             y honren a la madre tierra.
+          </p>
+          <p className="text-gray-500 text-sm mt-4 italic">
+            Según el estatuto de GENES Perú, todos los directores ejercen sus funciones de manera voluntaria.
           </p>
         </div>
 
