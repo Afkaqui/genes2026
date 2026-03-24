@@ -48,9 +48,13 @@ export const Header = () => {
         <ul className="hidden md:flex items-center gap-8">
           {navLinks.map((link) => (
             <li key={link.name}>
-              <Link 
+              <Link
                 href={link.href}
-                className="text-sm font-bold text-slate-700 hover:text-genes-green transition-colors duration-200"
+                className={`text-sm font-bold transition-colors duration-200 ${
+                  isScrolled
+                    ? 'text-slate-700 hover:text-genes-green'
+                    : 'text-white hover:text-genes-green drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]'
+                }`}
               >
                 {link.name}
               </Link>

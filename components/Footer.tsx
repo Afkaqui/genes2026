@@ -9,16 +9,6 @@ import genesLogo from '@/public/logos/genesLogo.png';
 export const Footer = () => {
   return (
     <footer className="relative w-full bg-slate-900 py-12 text-white overflow-hidden">
-      {/* Background optimizado con Next.js Image para evitar saltos de layout */}
-      <div className="absolute inset-0 -z-10 opacity-30">
-        <Image 
-          src="/images/rect1.png" 
-          alt="background decoration" 
-          fill 
-          className="object-cover object-center"
-          priority={false}
-        />
-      </div>
 
       <div className="mx-auto max-w-7xl px-6">
         <div className="flex flex-col gap-12 lg:flex-row lg:justify-between lg:items-start">

@@ -14,37 +14,37 @@ export const DirectorComponent = () => {
   const directores = [
     {
       nombre: "Mara Isabel Delgado Vaca Guzman",
-      cargo: "DIRECTOR EJECUTIVO",
+      cargo: "DIRECTOR EJECUTIVO VOLUNTARIO",
       imagen: DIRECTOR7,
       enlace: "https://www.linkedin.com/in/idvg-sostenibilidad/"
     },
     {
       nombre: "Ada Liccet Teresa Suarez Amapanqui",
-      cargo: "DIRECTOR SOSTENIBILIDAD",
+      cargo: "DIRECTOR SOSTENIBILIDAD VOLUNTARIO",
       imagen: DIRECTOR2,
       enlace: "https://www.linkedin.com/in/liccetsuarez/"
     },
     {
       nombre: "Percy Alberto Tafur Culqui",
-      cargo: "DIRECTOR DESARROLLO HUMANO",
+      cargo: "DIRECTOR DESARROLLO HUMANO VOLUNTARIO",
       imagen: DIRECTOR3,
       enlace: "https://www.linkedin.com/in/percy-a-tafur-culqui-6536bba8/"
     },
     {
       nombre: "Cristian Augusto Gutierrez Zevallos",
-      cargo: "DIRECTOR INNOVACIÓN",
+      cargo: "DIRECTOR INNOVACIÓN VOLUNTARIO",
       imagen: DIRECTOR4,
       enlace: "https://www.linkedin.com/in/cristiangz/"
     },
     {
       nombre: "Jhina Lorena López Vasquez",
-      cargo: "DIRECTOR INVERSIÓN DE IMPACTO",
+      cargo: "DIRECTOR INVERSIÓN DE IMPACTO VOLUNTARIO",
       imagen: DIRECTOR5,
       enlace: "https://www.linkedin.com/in/jhina-v%C3%A1squez-l%C3%B3pez-079b97237/"
     },
     {
       nombre: "Juan Miguel Quispe Mullisaca",
-      cargo: "DIRECTOR FINANZAS",
+      cargo: "DIRECTOR FINANZAS VOLUNTARIO",
       imagen: DIRECTOR6,
       enlace: "https://www.linkedin.com/in/miguel-quispe-2b3a4681/"
     },
@@ -56,7 +56,7 @@ export const DirectorComponent = () => {
     },
     {
       nombre: "Rosa Karina Pinasco Vela",
-      cargo: "DIRECTORA FUNDADORA",
+      cargo: "DIRECTORA FUNDADORA VOLUNTARIA",
       imagen: DIRECTOR8,
       enlace: "https://www.linkedin.com/in/rosa-karina-pinasco-vela-5b031b150/"
     }
