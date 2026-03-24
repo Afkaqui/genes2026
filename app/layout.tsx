@@ -87,7 +87,7 @@ export default function RootLayout({
       <body className="antialiased min-h-screen flex flex-col bg-white text-slate-900">
         <Header />
         
-        {/* Contenedor principal con gestión de espacio para el Header fixed si aplica */}
+        {/* Contenedorprincipal con gestión de espacio para el Header fixed si aplica */}
         <main className="flex-grow">
           {children}
         </main>
