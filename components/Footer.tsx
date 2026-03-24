@@ -1,11 +1,9 @@
 // src/components/ui/footer/Footer.tsx
 import Image from 'next/image';
 import Link from 'next/link';
+import { FaInstagram, FaFacebookF, FaLinkedinIn } from 'react-icons/fa';
 
-// Importaciones de imágenes optimizadas
-import insLogo from '@/public/logos/genesLogo.png';
-import faceLogo from '@/public/logos/genesLogo.png';
-import LinkLogo from '@/public/logos/genesLogo.png';
+// Logo de GENES
 import genesLogo from '@/public/logos/genesLogo.png';
 
 export const Footer = () => {
@@ -55,20 +53,21 @@ export const Footer = () => {
           {/* Lado Derecho: Redes Sociales */}
           <div className="flex flex-col items-center lg:items-end gap-4">
             <span className="text-lg font-semibold">Visítanos en:</span>
-            <div className="flex gap-6">
+            <div className="flex gap-5">
               {[
-                { href: "https://www.instagram.com/genes_peru/", src: insLogo, alt: "Instagram" },
-                { href: "https://www.facebook.com/Genesperuoficial", src: faceLogo, alt: "Facebook" },
-                { href: "https://www.linkedin.com/company/genesperu", src: LinkLogo, alt: "LinkedIn" }
+                { href: "https://www.instagram.com/genes_peru/", icon: FaInstagram, label: "Instagram" },
+                { href: "https://www.facebook.com/Genesperuoficial", icon: FaFacebookF, label: "Facebook" },
+                { href: "https://www.linkedin.com/company/genesperu", icon: FaLinkedinIn, label: "LinkedIn" },
               ].map((social) => (
-                <a 
-                  key={social.alt}
-                  href={social.href} 
-                  target="_blank" 
+                <a
+                  key={social.label}
+                  href={social.href}
+                  target="_blank"
                   rel="noopener noreferrer"
-                  className="transition-transform hover:scale-110 active:scale-95"
+                  aria-label={social.label}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:bg-genes-green hover:scale-110 active:scale-95"
                 >
-                  <Image src={social.src} alt={social.alt} width={28} height={28} className="brightness-110" />
+                  <social.icon className="h-5 w-5" />
                 </a>
               ))}
             </div>

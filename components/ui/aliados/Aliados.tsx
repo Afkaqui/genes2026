@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { InfiniteCarousel } from '@/components/ui/InfiniteCarousel';
 
 import UNHEVAL from '@/images/aliados/Logo UNHEVAL.png';
 import OLI from '@/images/aliados/LOGO_Oli.png';
@@ -22,21 +23,19 @@ export const Aliados = () => {
     return (
         <section className="text-center py-10 px-4 sm:px-12 lg:px-48">
             <h2 className="text-[48px] leading-[60px] tracking-[-2%] font-bold mb-8">NUESTROS ALIADOS</h2>
-            <div className="overflow-hidden">
-                <div className="flex overflow-x-auto gap-6 pb-4 hide-scrollbar">
-                    {aliados.map((aliado, index) => (
-                        <div key={index} className="flex-shrink-0 w-40 h-40">
-                            <Image
-                                src={aliado.img}
-                                alt={aliado.alt}
-                                width={160}
-                                height={160}
-                                className="object-contain w-full h-full grayscale hover:grayscale-0 transition-all"
-                            />
-                        </div>
-                    ))}
-                </div>
-            </div>
+            <InfiniteCarousel duration={15} gap={32}>
+                {aliados.map((aliado, index) => (
+                    <div key={index} className="flex-shrink-0 w-40 h-40">
+                        <Image
+                            src={aliado.img}
+                            alt={aliado.alt}
+                            width={160}
+                            height={160}
+                            className="object-contain w-full h-full grayscale hover:grayscale-0 transition-all duration-300"
+                        />
+                    </div>
+                ))}
+            </InfiniteCarousel>
         </section>
     );
 };

@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import { InfiniteCarousel } from '@/components/ui/InfiniteCarousel';
 
 import DISEÑO3R from '@/images/socios/3rdiseño.jpg';
 import ARQUITECTOS from '@/images/socios/AC arquitectos.jpg';
@@ -127,23 +128,43 @@ export const Socios = () => {
         { img: WIPS, alt: "Wips" }
     ];
 
+    // Dividir socios en 2 filas para mejor visualización
+    const mitad = Math.ceil(socios.length / 2);
+    const fila1 = socios.slice(0, mitad);
+    const fila2 = socios.slice(mitad);
+
     return (
         <section className="text-center py-10 px-4 sm:px-12 lg:px-24">
             <h2 className="text-[48px] leading-[60px] tracking-[-2%] font-bold mb-8">NUESTROS SOCIOS</h2>
-            <div className="overflow-hidden">
-                <div className="flex overflow-x-auto gap-6 pb-4 hide-scrollbar">
-                    {socios.map((socio, index) => (
-                        <div key={index} className="flex-shrink-0 w-40 h-40">
+            <div className="space-y-6">
+                {/* Fila 1: se mueve hacia la izquierda */}
+                <InfiniteCarousel duration={25} gap={24}>
+                    {fila1.map((socio, index) => (
+                        <div key={index} className="flex-shrink-0 w-32 h-32">
                             <Image
                                 src={socio.img}
                                 alt={`Logo de ${socio.alt}`}
-                                width={160}
-                                height={160}
-                                className="object-contain w-full h-full grayscale hover:grayscale-0 transition-all"
+                                width={128}
+                                height={128}
+                                className="object-contain w-full h-full grayscale hover:grayscale-0 transition-all duration-300"
                             />
                         </div>
                     ))}
-                </div>
+                </InfiniteCarousel>
+                {/* Fila 2: se mueve hacia la izquierda (velocidad diferente) */}
+                <InfiniteCarousel duration={30} gap={24}>
+                    {fila2.map((socio, index) => (
+                        <div key={index} className="flex-shrink-0 w-32 h-32">
+                            <Image
+                                src={socio.img}
+                                alt={`Logo de ${socio.alt}`}
+                                width={128}
+                                height={128}
+                                className="object-contain w-full h-full grayscale hover:grayscale-0 transition-all duration-300"
+                            />
+                        </div>
+                    ))}
+                </InfiniteCarousel>
             </div>
         </section>
     );
