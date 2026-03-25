@@ -8,6 +8,7 @@ import { LineasDeAccion } from '@/components/ui/lineasDeAccion/LineasDeAccion';
 import { Trayectoria } from '@/components/ui/trayectoria/Trayectoria';
 import { Socios } from '@/components/ui/socios/socios_page';
 import { ContactUs } from '@/components/ui/contactUs/ContactUs';
+import { Convenios } from '@/components/ui/convenios/Convenios';
 
 export default function Home() {
   return (
@@ -23,6 +24,7 @@ export default function Home() {
       <DirectorComponent />
       <JoinUs />
       <Aliados />
+      <Convenios />
       <LineasDeAccion />
       <Trayectoria />
       <Socios />
