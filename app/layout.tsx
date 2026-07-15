@@ -1,42 +1,36 @@
-// src/app/layout.tsx
 import '../app/globals.css';
 import type { Metadata, Viewport } from 'next';
-import { Header } from '@/components/Header';
-import { Footer } from '@/components/Footer';
-import { Montserrat } from 'next/font/google'; // Fuente recomendada para sostenibilidad
+import { Montserrat } from 'next/font/google';
 
-// 1. Configuración de la Fuente (Optimización de CLS)
 const montserrat = Montserrat({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-montserrat',
 });
 
-// 2. Nueva API de Viewport (Separada de Metadata en v14/v15+)
 export const viewport: Viewport = {
-  themeColor: '#759C30', // Tu verde institucional
+  themeColor: '#759C30',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
 };
 
-// 3. Metadata Centralizada y Segura
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.genesperu.earth'),
   title: {
-    default: 'GENES Perú | Gremio Nacional de Emprendedores Sostenibles',
-    template: '%s | GENES Perú',
+    default: 'GENES Peru | Gremio Nacional de Emprendedores Sostenibles',
+    template: '%s | GENES Peru',
   },
-  description: 'Impulsamos proyectos de sostenibilidad, economía circular y emprendimientos de impacto en Perú. Únete a la red de innovación disruptiva.',
-  keywords: ['Sostenibilidad', 'Economía Circular', 'Emprendimiento Perú', 'ODS', 'Innovación'],
-  authors: [{ name: 'Genes Perú', url: 'https://www.genesperu.earth' }],
+  description: 'Impulsamos proyectos de sostenibilidad, economia circular y emprendimientos de impacto en Peru. Unete a la red de innovacion disruptiva.',
+  keywords: ['Sostenibilidad', 'Economia Circular', 'Emprendimiento Peru', 'ODS', 'Innovacion'],
+  authors: [{ name: 'Genes Peru', url: 'https://www.genesperu.earth' }],
   creator: 'Angel Francisco Kaqui Aquino',
-  
+
   openGraph: {
-    title: 'GENES Perú - Co-creando el Futuro Sostenible',
-    description: 'Conectamos líderes y comunidades para transformar el impacto ambiental en Perú.',
+    title: 'GENES Peru - Co-creando el Futuro Sostenible',
+    description: 'Conectamos lideres y comunidades para transformar el impacto ambiental en Peru.',
     url: '/',
-    siteName: 'GENES Perú',
+    siteName: 'GENES Peru',
     locale: 'es_PE',
     type: 'website',
     images: [
@@ -44,14 +38,14 @@ export const metadata: Metadata = {
         url: '/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: 'GENES Perú - Gremio Nacional de Emprendedores Sostenibles',
+        alt: 'GENES Peru - Gremio Nacional de Emprendedores Sostenibles',
       },
     ],
   },
-  
+
   twitter: {
     card: 'summary_large_image',
-    title: 'GENES Perú | Sostenibilidad y Acción',
+    title: 'GENES Peru | Sostenibilidad y Accion',
     description: 'Gremio Nacional de Emprendedores Sostenibles.',
     images: ['/og-image.jpg'],
   },
@@ -85,14 +79,7 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${montserrat.variable} scroll-smooth`}>
       <body className="antialiased min-h-screen flex flex-col bg-white text-slate-900">
-        <Header />
-        
-        {/* Contenedorprincipal con gestión de espacio para el Header fixed si aplica */}
-        <main className="flex-grow">
-          {children}
-        </main>
-
-        <Footer />
+        {children}
       </body>
     </html>
   );
