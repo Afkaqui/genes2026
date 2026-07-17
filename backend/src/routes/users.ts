@@ -56,9 +56,10 @@ router.post('/', requireRole('admin', 'superadmin'), async (req: AuthRequest, re
   }
 });
 
-router.put('/:id', requireRole('superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const { full_name, dni, email, role, active, password } = req.body;
+  const isSuperadmin = req.user!.role === 'superadmin';
 
   try {
     const fields: string[] = [];
@@ -68,9 +69,17 @@ router.put('/:id', requireRole('superadmin'), async (req: AuthRequest, res: Resp
     if (full_name !== undefined) { fields.push(`full_name = $${idx++}`); values.push(full_name); }
     if (dni !== undefined) { fields.push(`dni = $${idx++}`); values.push(dni); }
     if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(email); }
-    if (role !== undefined) { fields.push(`role = $${idx++}`); values.push(role); }
-    if (active !== undefined) { fields.push(`active = $${idx++}`); values.push(active); }
+
+    if (role !== undefined) {
+      if (!isSuperadmin) { res.status(403).json({ message: 'Solo superadmins pueden cambiar roles' }); return; }
+      fields.push(`role = $${idx++}`); values.push(role);
+    }
+    if (active !== undefined) {
+      if (!isSuperadmin) { res.status(403).json({ message: 'Solo superadmins pueden activar/desactivar usuarios' }); return; }
+      fields.push(`active = $${idx++}`); values.push(active);
+    }
     if (password) {
+      if (!isSuperadmin) { res.status(403).json({ message: 'Solo superadmins pueden cambiar contrasenas de otros usuarios' }); return; }
       const hash = await bcrypt.hash(password, 12);
       fields.push(`password_hash = $${idx++}`);
       values.push(hash);

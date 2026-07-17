@@ -68,8 +68,12 @@ export default function AdminPanel() {
   // --- Forms state ---
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
   const [newCourse, setNewCourse] = useState({ name: '', description: '', hours: 1, instructor: '' });
-  const [newCert, setNewCert] = useState({ user_id: '', course_id: '', type: 'certificado', issue_date: '' });
+  const [editCourse, setEditCourse] = useState<Course | null>(null);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [bulkCert, setBulkCert] = useState({ selectedUserIds: [] as number[], course_id: '', type: 'certificado', issue_date: '' });
   const [formError, setFormError] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ issued: number; skipped: number } | null>(null);
 
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +81,19 @@ export default function AdminPanel() {
     const res = await fetch(`${API_URL}/api/users`, { method: 'POST', headers: headers(), body: JSON.stringify(newUser) });
     if (!res.ok) { setFormError((await res.json()).message); return; }
     setNewUser({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
+    setModal(null);
+    loadData();
+  };
+
+  const updateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+    setFormError('');
+    const body: Record<string, unknown> = { full_name: editUser.full_name, dni: editUser.dni, email: editUser.email };
+    if (isSuperadmin) { body.role = editUser.role; body.active = editUser.active; }
+    const res = await fetch(`${API_URL}/api/users/${editUser.id}`, { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
+    if (!res.ok) { setFormError((await res.json()).message); return; }
+    setEditUser(null);
     setModal(null);
     loadData();
   };
@@ -91,15 +108,65 @@ export default function AdminPanel() {
     loadData();
   };
 
-  const issueCert = async (e: React.FormEvent) => {
+  const updateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editCourse) return;
     setFormError('');
-    const body = { ...newCert, user_id: parseInt(newCert.user_id), course_id: parseInt(newCert.course_id) };
-    const res = await fetch(`${API_URL}/api/certificates`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+    const res = await fetch(`${API_URL}/api/courses/${editCourse.id}`, {
+      method: 'PUT', headers: headers(),
+      body: JSON.stringify({ name: editCourse.name, description: editCourse.description, hours: editCourse.hours, instructor: editCourse.instructor, active: editCourse.active }),
+    });
     if (!res.ok) { setFormError((await res.json()).message); return; }
-    setNewCert({ user_id: '', course_id: '', type: 'certificado', issue_date: '' });
+    setEditCourse(null);
     setModal(null);
     loadData();
+  };
+
+  const issueBulkCerts = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    if (bulkCert.selectedUserIds.length === 0) { setFormError('Selecciona al menos un participante'); return; }
+    if (!bulkCert.course_id) { setFormError('Selecciona un curso'); return; }
+
+    setBulkLoading(true);
+    setBulkResult(null);
+    try {
+      const res = await fetch(`${API_URL}/api/certificates/bulk`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({
+          user_ids: bulkCert.selectedUserIds,
+          course_id: parseInt(bulkCert.course_id),
+          type: bulkCert.type,
+          issue_date: bulkCert.issue_date || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setFormError(data.message); setBulkLoading(false); return; }
+      const skipped = bulkCert.selectedUserIds.length - data.issued;
+      setBulkResult({ issued: data.issued, skipped });
+      loadData();
+    } catch {
+      setFormError('Error de conexion');
+    }
+    setBulkLoading(false);
+  };
+
+  const toggleUserInBulk = (uid: number) => {
+    setBulkCert(prev => ({
+      ...prev,
+      selectedUserIds: prev.selectedUserIds.includes(uid)
+        ? prev.selectedUserIds.filter(id => id !== uid)
+        : [...prev.selectedUserIds, uid],
+    }));
+  };
+
+  const selectAllUsers = () => {
+    const activeUserIds = users.filter(u => u.active).map(u => u.id);
+    const allSelected = activeUserIds.every(id => bulkCert.selectedUserIds.includes(id));
+    setBulkCert(prev => ({
+      ...prev,
+      selectedUserIds: allSelected ? [] : activeUserIds,
+    }));
   };
 
   const deleteUser = async (id: number) => {
@@ -135,6 +202,8 @@ export default function AdminPanel() {
     { key: 'courses', label: `Cursos (${courses.length})` },
     { key: 'users', label: `Usuarios (${users.length})` },
   ];
+
+  const inputClass = "w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green";
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -181,9 +250,9 @@ export default function AdminPanel() {
           <div>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Certificados Emitidos</h2>
-              <button onClick={() => { setFormError(''); setModal('cert'); }}
+              <button onClick={() => { setFormError(''); setBulkResult(null); setBulkCert({ selectedUserIds: [], course_id: '', type: 'certificado', issue_date: '' }); setModal('cert'); }}
                 className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
-                Emitir Certificado
+                Emitir Certificados
               </button>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
@@ -234,8 +303,15 @@ export default function AdminPanel() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {courses.map((c) => (
-                <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-5">
-                  <h3 className="font-semibold text-slate-800 mb-1">{c.name}</h3>
+                <div key={c.id} className={`bg-white rounded-xl border p-5 ${c.active ? 'border-slate-200' : 'border-red-200 bg-red-50/30'}`}>
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <h3 className="font-semibold text-slate-800">{c.name}</h3>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!c.active && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Inactivo</span>}
+                      <button onClick={() => { setEditCourse({ ...c }); setFormError(''); setModal('editCourse'); }}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium">Editar</button>
+                    </div>
+                  </div>
                   {c.description && <p className="text-sm text-slate-500 mb-2 line-clamp-2">{c.description}</p>}
                   <div className="flex items-center gap-3 text-xs text-slate-400">
                     <span>{c.hours} horas</span>
@@ -266,7 +342,7 @@ export default function AdminPanel() {
                   <th className="text-left px-4 py-3 font-medium text-slate-600">DNI</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Rol</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Estado</th>
-                  {isSuperadmin && <th className="text-left px-4 py-3 font-medium text-slate-600">Acciones</th>}
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Acciones</th>
                 </tr></thead>
                 <tbody>
                   {users.map((u) => (
@@ -286,15 +362,19 @@ export default function AdminPanel() {
                           {u.active ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-                      {isSuperadmin && (
-                        <td className="px-4 py-3 flex gap-2">
-                          <button onClick={() => toggleUserActive(u)}
-                            className="text-xs text-blue-600 hover:text-blue-800">
-                            {u.active ? 'Desactivar' : 'Activar'}
-                          </button>
-                          <button onClick={() => deleteUser(u.id)} className="text-xs text-red-500 hover:text-red-700">Eliminar</button>
-                        </td>
-                      )}
+                      <td className="px-4 py-3 flex gap-2">
+                        <button onClick={() => { setEditUser({ ...u }); setFormError(''); setModal('editUser'); }}
+                          className="text-xs text-blue-600 hover:text-blue-800">Editar</button>
+                        {isSuperadmin && (
+                          <>
+                            <button onClick={() => toggleUserActive(u)}
+                              className="text-xs text-amber-600 hover:text-amber-800">
+                              {u.active ? 'Desactivar' : 'Activar'}
+                            </button>
+                            <button onClick={() => deleteUser(u.id)} className="text-xs text-red-500 hover:text-red-700">Eliminar</button>
+                          </>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -307,30 +387,30 @@ export default function AdminPanel() {
       {/* Modals */}
       {modal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setModal(null)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {modal === 'user' && (
               <form onSubmit={createUser} className="space-y-4">
                 <h3 className="text-lg font-bold text-slate-800">Nuevo Usuario</h3>
                 <input placeholder="Nombre completo *" required value={newUser.full_name}
                   onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                  className={inputClass} />
                 <input placeholder="Username *" required value={newUser.username}
                   onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                  className={inputClass} />
                 <input placeholder="Contrasena *" type="password" required value={newUser.password}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                  className={inputClass} />
                 <div className="grid grid-cols-2 gap-3">
                   <input placeholder="DNI" value={newUser.dni}
                     onChange={(e) => setNewUser({ ...newUser, dni: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                    className={inputClass} />
                   <input placeholder="Email" type="email" value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                    className={inputClass} />
                 </div>
                 {isSuperadmin && (
                   <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green">
+                    className={inputClass}>
                     <option value="user">Usuario</option>
                     <option value="admin">Admin</option>
                     <option value="superadmin">Superadmin</option>
@@ -349,17 +429,17 @@ export default function AdminPanel() {
                 <h3 className="text-lg font-bold text-slate-800">Nuevo Curso</h3>
                 <input placeholder="Nombre del curso *" required value={newCourse.name}
                   onChange={(e) => setNewCourse({ ...newCourse, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                  className={inputClass} />
                 <textarea placeholder="Descripcion" value={newCourse.description} rows={2}
                   onChange={(e) => setNewCourse({ ...newCourse, description: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green resize-none" />
+                  className={inputClass + ' resize-none'} />
                 <div className="grid grid-cols-2 gap-3">
                   <input placeholder="Horas *" type="number" min={1} required value={newCourse.hours}
                     onChange={(e) => setNewCourse({ ...newCourse, hours: parseInt(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                    className={inputClass} />
                   <input placeholder="Instructor" value={newCourse.instructor}
                     onChange={(e) => setNewCourse({ ...newCourse, instructor: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                    className={inputClass} />
                 </div>
                 {formError && <p className="text-red-500 text-sm">{formError}</p>}
                 <div className="flex gap-3 justify-end">
@@ -369,39 +449,149 @@ export default function AdminPanel() {
               </form>
             )}
 
+            {modal === 'editCourse' && editCourse && (
+              <form onSubmit={updateCourse} className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-800">Editar Curso</h3>
+                <input placeholder="Nombre del curso *" required value={editCourse.name}
+                  onChange={(e) => setEditCourse({ ...editCourse, name: e.target.value })}
+                  className={inputClass} />
+                <textarea placeholder="Descripcion" value={editCourse.description || ''} rows={2}
+                  onChange={(e) => setEditCourse({ ...editCourse, description: e.target.value })}
+                  className={inputClass + ' resize-none'} />
+                <div className="grid grid-cols-2 gap-3">
+                  <input placeholder="Horas *" type="number" min={1} required value={editCourse.hours}
+                    onChange={(e) => setEditCourse({ ...editCourse, hours: parseInt(e.target.value) || 1 })}
+                    className={inputClass} />
+                  <input placeholder="Instructor" value={editCourse.instructor || ''}
+                    onChange={(e) => setEditCourse({ ...editCourse, instructor: e.target.value })}
+                    className={inputClass} />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={editCourse.active}
+                    onChange={(e) => setEditCourse({ ...editCourse, active: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-300 text-genes-green focus:ring-genes-green" />
+                  Curso activo
+                </label>
+                {formError && <p className="text-red-500 text-sm">{formError}</p>}
+                <div className="flex gap-3 justify-end">
+                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">Cancelar</button>
+                  <button type="submit" className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium">Guardar</button>
+                </div>
+              </form>
+            )}
+
+            {modal === 'editUser' && editUser && (
+              <form onSubmit={updateUser} className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-800">Editar Usuario</h3>
+                <p className="text-xs text-slate-400 -mt-2">Username: {editUser.username}</p>
+                <input placeholder="Nombre completo *" required value={editUser.full_name}
+                  onChange={(e) => setEditUser({ ...editUser, full_name: e.target.value })}
+                  className={inputClass} />
+                <div className="grid grid-cols-2 gap-3">
+                  <input placeholder="DNI" value={editUser.dni || ''}
+                    onChange={(e) => setEditUser({ ...editUser, dni: e.target.value })}
+                    className={inputClass} />
+                  <input placeholder="Email" type="email" value={editUser.email || ''}
+                    onChange={(e) => setEditUser({ ...editUser, email: e.target.value })}
+                    className={inputClass} />
+                </div>
+                {isSuperadmin && (
+                  <>
+                    <select value={editUser.role} onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}
+                      className={inputClass}>
+                      <option value="user">Usuario</option>
+                      <option value="admin">Admin</option>
+                      <option value="superadmin">Superadmin</option>
+                    </select>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={editUser.active}
+                        onChange={(e) => setEditUser({ ...editUser, active: e.target.checked })}
+                        className="w-4 h-4 rounded border-slate-300 text-genes-green focus:ring-genes-green" />
+                      Usuario activo
+                    </label>
+                  </>
+                )}
+                {formError && <p className="text-red-500 text-sm">{formError}</p>}
+                <div className="flex gap-3 justify-end">
+                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">Cancelar</button>
+                  <button type="submit" className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium">Guardar</button>
+                </div>
+              </form>
+            )}
+
             {modal === 'cert' && (
-              <form onSubmit={issueCert} className="space-y-4">
-                <h3 className="text-lg font-bold text-slate-800">Emitir Certificado</h3>
-                <select required value={newCert.user_id}
-                  onChange={(e) => setNewCert({ ...newCert, user_id: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green">
-                  <option value="">Seleccionar participante *</option>
-                  {users.filter((u) => u.active).map((u) => (
-                    <option key={u.id} value={u.id}>{u.full_name} ({u.username})</option>
-                  ))}
-                </select>
-                <select required value={newCert.course_id}
-                  onChange={(e) => setNewCert({ ...newCert, course_id: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green">
+              <form onSubmit={issueBulkCerts} className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-800">Emitir Certificados</h3>
+                <p className="text-sm text-slate-500 -mt-2">Selecciona uno o varios participantes para emitir certificados en lote.</p>
+
+                <select required value={bulkCert.course_id}
+                  onChange={(e) => setBulkCert({ ...bulkCert, course_id: e.target.value })}
+                  className={inputClass}>
                   <option value="">Seleccionar curso *</option>
                   {courses.filter((c) => c.active).map((c) => (
                     <option key={c.id} value={c.id}>{c.name} ({c.hours}h)</option>
                   ))}
                 </select>
+
                 <div className="grid grid-cols-2 gap-3">
-                  <select value={newCert.type} onChange={(e) => setNewCert({ ...newCert, type: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green">
+                  <select value={bulkCert.type} onChange={(e) => setBulkCert({ ...bulkCert, type: e.target.value })}
+                    className={inputClass}>
                     <option value="certificado">Certificado</option>
                     <option value="constancia">Constancia</option>
                   </select>
-                  <input type="date" value={newCert.issue_date}
-                    onChange={(e) => setNewCert({ ...newCert, issue_date: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green" />
+                  <input type="date" value={bulkCert.issue_date}
+                    onChange={(e) => setBulkCert({ ...bulkCert, issue_date: e.target.value })}
+                    className={inputClass} />
                 </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-slate-700">
+                      Participantes ({bulkCert.selectedUserIds.length} seleccionados)
+                    </label>
+                    <button type="button" onClick={selectAllUsers}
+                      className="text-xs text-genes-green hover:text-genes-green/80 font-medium">
+                      {users.filter(u => u.active).every(u => bulkCert.selectedUserIds.includes(u.id)) ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                    </button>
+                  </div>
+                  <div className="border border-slate-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-slate-100">
+                    {users.filter(u => u.active).map(u => (
+                      <label key={u.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox"
+                          checked={bulkCert.selectedUserIds.includes(u.id)}
+                          onChange={() => toggleUserInBulk(u.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-genes-green focus:ring-genes-green shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-slate-800 truncate">{u.full_name}</p>
+                          <p className="text-xs text-slate-400">{u.username}{u.dni ? ` - ${u.dni}` : ''}</p>
+                        </div>
+                      </label>
+                    ))}
+                    {users.filter(u => u.active).length === 0 && (
+                      <p className="text-sm text-slate-400 text-center py-4">No hay usuarios activos</p>
+                    )}
+                  </div>
+                </div>
+
                 {formError && <p className="text-red-500 text-sm">{formError}</p>}
+
+                {bulkResult && (
+                  <div className="text-sm px-4 py-2.5 rounded-lg border bg-green-50 text-green-700 border-green-200">
+                    {bulkResult.issued} certificado{bulkResult.issued !== 1 ? 's' : ''} emitido{bulkResult.issued !== 1 ? 's' : ''} correctamente
+                    {bulkResult.skipped > 0 && `. ${bulkResult.skipped} omitido${bulkResult.skipped !== 1 ? 's' : ''} (ya existian).`}
+                  </div>
+                )}
+
                 <div className="flex gap-3 justify-end">
-                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">Cancelar</button>
-                  <button type="submit" className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium">Emitir</button>
+                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">
+                    {bulkResult ? 'Cerrar' : 'Cancelar'}
+                  </button>
+                  {!bulkResult && (
+                    <button type="submit" disabled={bulkLoading}
+                      className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                      {bulkLoading ? 'Emitiendo...' : `Emitir (${bulkCert.selectedUserIds.length})`}
+                    </button>
+                  )}
                 </div>
               </form>
             )}

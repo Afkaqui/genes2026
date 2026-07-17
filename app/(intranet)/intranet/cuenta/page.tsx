@@ -30,10 +30,20 @@ export default function CuentaPage() {
   const [pwdMsg, setPwdMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
   const [pwdLoading, setPwdLoading] = useState(false);
 
+  const [editName, setEditName] = useState('');
+  const [editDni, setEditDni] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [profileMsg, setProfileMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+
   const [roleMsg, setRoleMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
   const getToken = () => localStorage.getItem('genes_token');
-  const headers = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
+  const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isSuperadmin = currentUser?.role === 'superadmin';
 
   const logout = useCallback(() => {
     localStorage.removeItem('genes_token');
@@ -50,6 +60,9 @@ export default function CuentaPage() {
       if (meRes.status === 401) { logout(); return; }
       const me = await meRes.json();
       setCurrentUser(me);
+      setEditName(me.full_name);
+      setEditDni(me.dni || '');
+      setEditEmail(me.email || '');
 
       if (me.role === 'superadmin') {
         const uRes = await fetch(`${API_URL}/api/users`, { headers: { Authorization: `Bearer ${token}` } });
@@ -82,7 +95,7 @@ export default function CuentaPage() {
     try {
       const res = await fetch(`${API_URL}/api/auth/change-password`, {
         method: 'PUT',
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify({ currentPassword, newPassword }),
       });
       const data = await res.json();
@@ -100,19 +113,51 @@ export default function CuentaPage() {
     setPwdLoading(false);
   };
 
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setProfileMsg(null);
+    setProfileLoading(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/users/${currentUser.id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ full_name: editName, dni: editDni, email: editEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileMsg({ type: 'error', text: data.message });
+      } else {
+        setProfileMsg({ type: 'ok', text: 'Datos actualizados correctamente' });
+        setEditingProfile(false);
+        const stored = localStorage.getItem('genes_user');
+        if (stored) {
+          const u = JSON.parse(stored);
+          u.full_name = editName;
+          localStorage.setItem('genes_user', JSON.stringify(u));
+        }
+        loadData();
+      }
+    } catch {
+      setProfileMsg({ type: 'error', text: 'Error de conexion' });
+    }
+    setProfileLoading(false);
+  };
+
   const changeRole = async (userId: number, newRole: string) => {
     setRoleMsg(null);
     try {
       const res = await fetch(`${API_URL}/api/users/${userId}`, {
         method: 'PUT',
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify({ role: newRole }),
       });
       const data = await res.json();
       if (!res.ok) {
         setRoleMsg({ type: 'error', text: data.message });
       } else {
-        setRoleMsg({ type: 'ok', text: `Rol actualizado correctamente` });
+        setRoleMsg({ type: 'ok', text: 'Rol actualizado correctamente' });
         loadData();
       }
     } catch {
@@ -120,7 +165,7 @@ export default function CuentaPage() {
     }
   };
 
-  const isSuperadmin = currentUser?.role === 'superadmin';
+  const inputClass = "w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green";
 
   if (loading) {
     return (
@@ -153,35 +198,102 @@ export default function CuentaPage() {
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         {/* User info */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-4">Informacion Personal</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-slate-500">Nombre completo</span>
-              <p className="font-medium text-slate-800">{currentUser?.full_name}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">Usuario</span>
-              <p className="font-medium text-slate-800">{currentUser?.username}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">DNI</span>
-              <p className="font-medium text-slate-800">{currentUser?.dni || '—'}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">Email</span>
-              <p className="font-medium text-slate-800">{currentUser?.email || '—'}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">Rol</span>
-              <p className="font-medium">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-800">Informacion Personal</h2>
+            {isAdmin && !editingProfile && (
+              <button onClick={() => { setEditingProfile(true); setProfileMsg(null); }}
+                className="text-xs sm:text-sm text-blue-600 hover:text-blue-800 font-medium">
+                Editar
+              </button>
+            )}
+          </div>
+
+          {editingProfile && isAdmin ? (
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Nombre completo</label>
+                  <input required value={editName} onChange={(e) => setEditName(e.target.value)}
+                    className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Usuario</label>
+                  <p className="px-3 py-2 text-sm text-slate-400 bg-slate-50 rounded-lg border border-slate-200">{currentUser?.username}</p>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">DNI</label>
+                  <input value={editDni} onChange={(e) => setEditDni(e.target.value)}
+                    className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Email</label>
+                  <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                    className={inputClass} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Rol:</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
                   currentUser?.role === 'superadmin' ? 'bg-purple-50 text-purple-700'
                   : currentUser?.role === 'admin' ? 'bg-amber-50 text-amber-700'
                   : 'bg-slate-100 text-slate-600'
                 }`}>{currentUser?.role}</span>
-              </p>
-            </div>
-          </div>
+              </div>
+
+              {profileMsg && (
+                <div className={`text-sm px-4 py-2.5 rounded-lg border ${
+                  profileMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-100'
+                }`}>{profileMsg.text}</div>
+              )}
+
+              <div className="flex gap-3">
+                <button type="submit" disabled={profileLoading}
+                  className="bg-genes-green text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition disabled:opacity-50">
+                  {profileLoading ? 'Guardando...' : 'Guardar'}
+                </button>
+                <button type="button" onClick={() => { setEditingProfile(false); setEditName(currentUser?.full_name || ''); setEditDni(currentUser?.dni || ''); setEditEmail(currentUser?.email || ''); }}
+                  className="px-5 py-2 text-sm text-slate-600 hover:text-slate-800">Cancelar</button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-slate-500">Nombre completo</span>
+                  <p className="font-medium text-slate-800">{currentUser?.full_name}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500">Usuario</span>
+                  <p className="font-medium text-slate-800">{currentUser?.username}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500">DNI</span>
+                  <p className="font-medium text-slate-800">{currentUser?.dni || '—'}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500">Email</span>
+                  <p className="font-medium text-slate-800">{currentUser?.email || '—'}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500">Rol</span>
+                  <p className="font-medium">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      currentUser?.role === 'superadmin' ? 'bg-purple-50 text-purple-700'
+                      : currentUser?.role === 'admin' ? 'bg-amber-50 text-amber-700'
+                      : 'bg-slate-100 text-slate-600'
+                    }`}>{currentUser?.role}</span>
+                  </p>
+                </div>
+              </div>
+              {!isAdmin && <p className="text-xs text-slate-400 mt-3">Para modificar tus datos, contacta a un administrador.</p>}
+
+              {profileMsg && (
+                <div className={`text-sm px-4 py-2.5 rounded-lg border mt-4 ${
+                  profileMsg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-600 border-red-100'
+                }`}>{profileMsg.text}</div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Change password */}
@@ -192,21 +304,21 @@ export default function CuentaPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1">Contrasena actual</label>
               <input type="password" required value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green"
+                className={inputClass}
                 placeholder="Ingresa tu contrasena actual" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Nueva contrasena</label>
               <input type="password" required value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green"
+                className={inputClass}
                 placeholder="Minimo 6 caracteres" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Confirmar nueva contrasena</label>
               <input type="password" required value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green"
+                className={inputClass}
                 placeholder="Repite la nueva contrasena" />
             </div>
 
