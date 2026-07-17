@@ -61,6 +61,42 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+router.put('/change-password', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ message: 'Contrasena actual y nueva son requeridas' });
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    res.status(400).json({ message: 'La nueva contrasena debe tener al menos 6 caracteres' });
+    return;
+  }
+
+  try {
+    const result = await pool.query('SELECT password_hash FROM users WHERE id = $1', [req.user!.userId]);
+    if (result.rows.length === 0) {
+      res.status(404).json({ message: 'Usuario no encontrado' });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    if (!valid) {
+      res.status(401).json({ message: 'Contrasena actual incorrecta' });
+      return;
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hash, req.user!.userId]);
+
+    res.json({ message: 'Contrasena actualizada correctamente' });
+  } catch (err) {
+    console.error('Error al cambiar contrasena:', err);
+    res.status(500).json({ message: 'Error al cambiar contrasena' });
+  }
+});
+
 router.get('/me', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await pool.query(

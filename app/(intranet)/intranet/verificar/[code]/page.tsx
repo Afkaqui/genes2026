@@ -54,29 +54,29 @@ export default function VerificarPage({ params }: { params: Promise<{ code: stri
               </div>
 
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between py-2 border-b border-slate-100">
+                <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                   <span className="text-slate-500">Tipo</span>
                   <span className="font-medium text-slate-800 capitalize">{result.type}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-100">
+                <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                   <span className="text-slate-500">Otorgado a</span>
                   <span className="font-medium text-slate-800">{result.full_name}</span>
                 </div>
                 {result.dni && (
-                  <div className="flex justify-between py-2 border-b border-slate-100">
+                  <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                     <span className="text-slate-500">DNI</span>
                     <span className="font-medium text-slate-800">{result.dni}</span>
                   </div>
                 )}
-                <div className="flex justify-between py-2 border-b border-slate-100">
+                <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                   <span className="text-slate-500">Curso</span>
-                  <span className="font-medium text-slate-800">{result.course_name}</span>
+                  <span className="font-medium text-slate-800 text-right">{result.course_name}</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-100">
+                <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                   <span className="text-slate-500">Duracion</span>
                   <span className="font-medium text-slate-800">{result.hours} horas</span>
                 </div>
-                <div className="flex justify-between py-2 border-b border-slate-100">
+                <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                   <span className="text-slate-500">Fecha de emision</span>
                   <span className="font-medium text-slate-800">
                     {new Date(result.issue_date!).toLocaleDateString('es-PE', {
@@ -85,7 +85,7 @@ export default function VerificarPage({ params }: { params: Promise<{ code: stri
                   </span>
                 </div>
                 {result.instructor && (
-                  <div className="flex justify-between py-2">
+                  <div className="flex flex-wrap justify-between gap-x-4 py-2">
                     <span className="text-slate-500">Instructor</span>
                     <span className="font-medium text-slate-800">{result.instructor}</span>
                   </div>

@@ -72,24 +72,27 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Image src={genesLogo} alt="GENES Peru" width={40} height={40} />
-            <div>
-              <h1 className="text-lg font-bold text-slate-800 leading-tight">Intranet GENES</h1>
-              <p className="text-xs text-slate-500">Portal de Certificados</p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <Image src={genesLogo} alt="GENES Peru" width={40} height={40} className="shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-slate-800 leading-tight">Intranet GENES</h1>
+              <p className="text-xs text-slate-500 hidden sm:block">Portal de Certificados</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {isAdmin && (
               <Link href="/intranet/admin"
-                className="text-sm bg-genes-green text-white px-4 py-1.5 rounded-lg font-medium hover:bg-genes-green/90 transition">
-                Panel Admin
+                className="text-xs sm:text-sm bg-genes-green text-white px-3 sm:px-4 py-1.5 rounded-lg font-medium hover:bg-genes-green/90 transition whitespace-nowrap">
+                Admin
               </Link>
             )}
+            <Link href="/intranet/cuenta" className="text-xs sm:text-sm text-slate-600 hover:text-genes-green transition whitespace-nowrap">
+              Mi Cuenta
+            </Link>
             <span className="text-sm text-slate-600 hidden sm:block">{user?.full_name}</span>
-            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{user?.role}</span>
-            <button onClick={logout} className="text-sm text-slate-500 hover:text-red-500 transition font-medium">
+            <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full hidden sm:inline">{user?.role}</span>
+            <button onClick={logout} className="text-xs sm:text-sm text-slate-500 hover:text-red-500 transition font-medium">
               Salir
             </button>
           </div>

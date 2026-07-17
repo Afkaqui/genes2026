@@ -140,32 +140,35 @@ export default function AdminPanel() {
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Image src={genesLogo} alt="GENES Peru" width={40} height={40} />
-            <div>
-              <h1 className="text-lg font-bold text-slate-800 leading-tight">Panel de Administracion</h1>
-              <p className="text-xs text-slate-500">Intranet GENES Peru</p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <Image src={genesLogo} alt="GENES Peru" width={40} height={40} className="shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-bold text-slate-800 leading-tight truncate">Panel de Administracion</h1>
+              <p className="text-xs text-slate-500 hidden sm:block">Intranet GENES Peru</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/intranet/dashboard" className="text-sm text-slate-600 hover:text-genes-green transition">
-              Mi Dashboard
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <Link href="/intranet/dashboard" className="text-xs sm:text-sm text-slate-600 hover:text-genes-green transition whitespace-nowrap">
+              Dashboard
             </Link>
-            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+            <Link href="/intranet/cuenta" className="text-xs sm:text-sm text-slate-600 hover:text-genes-green transition whitespace-nowrap">
+              Mi Cuenta
+            </Link>
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium hidden sm:inline">
               {currentUser?.role}
             </span>
-            <button onClick={logout} className="text-sm text-slate-500 hover:text-red-500 transition font-medium">Salir</button>
+            <button onClick={logout} className="text-xs sm:text-sm text-slate-500 hover:text-red-500 transition font-medium">Salir</button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 bg-white rounded-lg p-1 border border-slate-200 w-fit">
+        <div className="flex flex-wrap gap-1 mb-6 bg-white rounded-lg p-1 border border-slate-200 w-full sm:w-fit">
           {tabs.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${
                 tab === t.key ? 'bg-genes-green text-white' : 'text-slate-600 hover:bg-slate-50'
               }`}>
               {t.label}
@@ -176,10 +179,10 @@ export default function AdminPanel() {
         {/* Certificates Tab */}
         {tab === 'certificates' && (
           <div>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Certificados Emitidos</h2>
               <button onClick={() => { setFormError(''); setModal('cert'); }}
-                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition">
+                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
                 Emitir Certificado
               </button>
             </div>
@@ -222,10 +225,10 @@ export default function AdminPanel() {
         {/* Courses Tab */}
         {tab === 'courses' && (
           <div>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Cursos</h2>
               <button onClick={() => { setFormError(''); setModal('course'); }}
-                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition">
+                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
                 Crear Curso
               </button>
             </div>
@@ -248,10 +251,10 @@ export default function AdminPanel() {
         {/* Users Tab */}
         {tab === 'users' && (
           <div>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Usuarios</h2>
               <button onClick={() => { setFormError(''); setModal('user'); }}
-                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition">
+                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
                 Agregar Usuario
               </button>
             </div>
