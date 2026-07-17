@@ -10,19 +10,20 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface User { id: number; username: string; full_name: string; dni: string; email: string; role: string; active: boolean; }
 interface Course { id: number; name: string; description: string; hours: number; instructor: string; active: boolean; creator_name: string; }
-interface Certificate { id: number; type: string; verification_code: string; issue_date: string; hours: number; course_name: string; full_name: string; }
+interface Certificate { id: number; type: string; verification_code: string; issue_date: string; hours: number; course_name: string; course_id: number; full_name: string; issued_by_name: string | null; }
 
 type Tab = 'certificates' | 'courses' | 'users';
 
 export default function AdminPanel() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<{ role: string; full_name: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; role: string; full_name: string } | null>(null);
   const [tab, setTab] = useState<Tab>('certificates');
   const [users, setUsers] = useState<User[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<string | null>(null);
+  const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
 
   const getToken = () => localStorage.getItem('genes_token');
   const headers = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
@@ -203,6 +204,18 @@ export default function AdminPanel() {
     { key: 'users', label: `Usuarios (${users.length})` },
   ];
 
+  // Agrupar certificados por curso
+  const certsByCourse = (() => {
+    const map = new Map<number, { course_id: number; course_name: string; certs: Certificate[] }>();
+    for (const c of certificates) {
+      if (!map.has(c.course_id)) {
+        map.set(c.course_id, { course_id: c.course_id, course_name: c.course_name, certs: [] });
+      }
+      map.get(c.course_id)!.certs.push(c);
+    }
+    return Array.from(map.values()).sort((a, b) => a.course_name.localeCompare(b.course_name));
+  })();
+
   const inputClass = "w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green";
 
   return (
@@ -255,39 +268,70 @@ export default function AdminPanel() {
                 Emitir Certificados
               </button>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Participante</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Curso</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Tipo</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Codigo</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Fecha</th>
-                  {isSuperadmin && <th className="text-left px-4 py-3 font-medium text-slate-600">Acciones</th>}
-                </tr></thead>
-                <tbody>
-                  {certificates.map((c) => (
-                    <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="px-4 py-3 text-slate-800">{c.full_name}</td>
-                      <td className="px-4 py-3 text-slate-600">{c.course_name}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          c.type === 'certificado' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
-                        }`}>{c.type}</span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.verification_code}</td>
-                      <td className="px-4 py-3 text-slate-500">{new Date(c.issue_date).toLocaleDateString('es-PE')}</td>
-                      {isSuperadmin && (
-                        <td className="px-4 py-3">
-                          <button onClick={() => deleteCert(c.id)} className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
-                        </td>
+
+            {certificates.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+                No hay certificados emitidos
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {certsByCourse.map((group) => {
+                  const open = expandedCourses[group.course_id] ?? true;
+                  return (
+                    <div key={group.course_id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                      <button onClick={() => setExpandedCourses(prev => ({ ...prev, [group.course_id]: !open }))}
+                        className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition text-left">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className={`text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-slate-800 truncate">{group.course_name}</h3>
+                            <p className="text-xs text-slate-400">{group.certs.length} certificado{group.certs.length !== 1 ? 's' : ''}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-medium bg-genes-green/10 text-genes-green px-2.5 py-1 rounded-full shrink-0">
+                          {group.certs.length}
+                        </span>
+                      </button>
+
+                      {open && (
+                        <div className="overflow-x-auto border-t border-slate-100">
+                          <table className="w-full text-sm">
+                            <thead><tr className="border-b border-slate-100 bg-slate-50/70">
+                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Participante</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Tipo</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Emitido por</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Codigo</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Fecha</th>
+                              {isSuperadmin && <th className="text-left px-4 py-2.5 font-medium text-slate-600">Acciones</th>}
+                            </tr></thead>
+                            <tbody>
+                              {group.certs.map((c) => (
+                                <tr key={c.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                                  <td className="px-4 py-3 text-slate-800">{c.full_name}</td>
+                                  <td className="px-4 py-3">
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                      c.type === 'certificado' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
+                                    }`}>{c.type}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500">{c.issued_by_name || '—'}</td>
+                                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.verification_code}</td>
+                                  <td className="px-4 py-3 text-slate-500">{new Date(c.issue_date).toLocaleDateString('es-PE')}</td>
+                                  {isSuperadmin && (
+                                    <td className="px-4 py-3">
+                                      <button onClick={() => deleteCert(c.id)} className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {certificates.length === 0 && <p className="text-center text-slate-400 py-8">No hay certificados emitidos</p>}
-            </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -363,9 +407,13 @@ export default function AdminPanel() {
                         </span>
                       </td>
                       <td className="px-4 py-3 flex gap-2">
-                        <button onClick={() => { setEditUser({ ...u }); setFormError(''); setModal('editUser'); }}
-                          className="text-xs text-blue-600 hover:text-blue-800">Editar</button>
-                        {isSuperadmin && (
+                        {/* Superadmin edita a todos; admin solo a usuarios regulares o a si mismo */}
+                        {(isSuperadmin || u.role === 'user' || u.id === currentUser?.id) && (
+                          <button onClick={() => { setEditUser({ ...u }); setFormError(''); setModal('editUser'); }}
+                            className="text-xs text-blue-600 hover:text-blue-800">Editar</button>
+                        )}
+                        {/* Superadmin gestiona a todos; admin solo a usuarios regulares */}
+                        {(isSuperadmin || u.role === 'user') && u.id !== currentUser?.id && (
                           <>
                             <button onClick={() => toggleUserActive(u)}
                               className="text-xs text-amber-600 hover:text-amber-800">

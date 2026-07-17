@@ -57,11 +57,25 @@ router.post('/', requireRole('admin', 'superadmin'), async (req: AuthRequest, re
 });
 
 router.put('/:id', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const { full_name, dni, email, role, active, password } = req.body;
   const isSuperadmin = req.user!.role === 'superadmin';
+  const isSelf = parseInt(id) === req.user!.userId;
 
   try {
+    const target = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
+    if (target.rows.length === 0) {
+      res.status(404).json({ message: 'Usuario no encontrado' });
+      return;
+    }
+    const targetRole = target.rows[0].role;
+
+    // Los administradores solo pueden gestionar usuarios regulares (o editar su propia info)
+    if (!isSuperadmin && !isSelf && targetRole !== 'user') {
+      res.status(403).json({ message: 'Los administradores solo pueden gestionar usuarios regulares' });
+      return;
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -75,7 +89,7 @@ router.put('/:id', requireRole('admin', 'superadmin'), async (req: AuthRequest, 
       fields.push(`role = $${idx++}`); values.push(role);
     }
     if (active !== undefined) {
-      if (!isSuperadmin) { res.status(403).json({ message: 'Solo superadmins pueden activar/desactivar usuarios' }); return; }
+      if (!isSuperadmin && isSelf) { res.status(403).json({ message: 'No puedes cambiar tu propio estado' }); return; }
       fields.push(`active = $${idx++}`); values.push(active);
     }
     if (password) {
@@ -99,11 +113,6 @@ router.put('/:id', requireRole('admin', 'superadmin'), async (req: AuthRequest, 
       values
     );
 
-    if (result.rows.length === 0) {
-      res.status(404).json({ message: 'Usuario no encontrado' });
-      return;
-    }
-
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error al actualizar usuario:', err);
@@ -111,8 +120,9 @@ router.put('/:id', requireRole('admin', 'superadmin'), async (req: AuthRequest, 
   }
 });
 
-router.delete('/:id', requireRole('superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:id', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const id = req.params.id as string;
+  const isSuperadmin = req.user!.role === 'superadmin';
 
   if (parseInt(id) === req.user!.userId) {
     res.status(400).json({ message: 'No puedes eliminarte a ti mismo' });
@@ -120,11 +130,19 @@ router.delete('/:id', requireRole('superadmin'), async (req: AuthRequest, res: R
   }
 
   try {
-    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
-    if (result.rows.length === 0) {
+    const target = await pool.query('SELECT role FROM users WHERE id = $1', [id]);
+    if (target.rows.length === 0) {
       res.status(404).json({ message: 'Usuario no encontrado' });
       return;
     }
+
+    // Solo un superadmin puede eliminar administradores u otros superadmins
+    if (!isSuperadmin && target.rows[0].role !== 'user') {
+      res.status(403).json({ message: 'Solo un superadmin puede eliminar administradores' });
+      return;
+    }
+
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ message: 'Usuario eliminado' });
   } catch (err) {
     console.error('Error al eliminar usuario:', err);

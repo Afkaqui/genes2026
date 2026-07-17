@@ -46,24 +46,26 @@ router.get('/verify/:code', async (req: Request, res: Response): Promise<void> =
 // Protected routes
 router.use(authMiddleware);
 
-// List certificates (users: own only; admin/superadmin: all)
+// List certificates (users: own only; admin/superadmin: all, salvo ?mine=true)
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const isAdmin = req.user!.role === 'admin' || req.user!.role === 'superadmin';
-    const query = isAdmin
-      ? `SELECT c.*, u.full_name, u.dni, co.name as course_name, co.instructor
-         FROM certificates c
-         JOIN users u ON u.id = c.user_id
-         JOIN courses co ON co.id = c.course_id
-         ORDER BY c.created_at DESC`
-      : `SELECT c.*, u.full_name, u.dni, co.name as course_name, co.instructor
-         FROM certificates c
-         JOIN users u ON u.id = c.user_id
-         JOIN courses co ON co.id = c.course_id
-         WHERE c.user_id = $1
-         ORDER BY c.created_at DESC`;
+    const onlyMine = req.query.mine === 'true';
+    const scopeAll = isAdmin && !onlyMine;
 
-    const result = isAdmin
+    const select = `SELECT c.*, u.full_name, u.dni,
+              co.name as course_name, co.instructor,
+              iu.full_name as issued_by_name
+       FROM certificates c
+       JOIN users u ON u.id = c.user_id
+       JOIN courses co ON co.id = c.course_id
+       LEFT JOIN users iu ON iu.id = c.issued_by`;
+
+    const query = scopeAll
+      ? `${select} ORDER BY c.created_at DESC`
+      : `${select} WHERE c.user_id = $1 ORDER BY c.created_at DESC`;
+
+    const result = scopeAll
       ? await pool.query(query)
       : await pool.query(query, [req.user!.userId]);
 

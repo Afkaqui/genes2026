@@ -17,6 +17,7 @@ interface Certificate {
   course_name: string;
   full_name: string;
   instructor: string;
+  issued_by_name: string | null;
 }
 
 interface User {
@@ -47,7 +48,7 @@ export default function Dashboard() {
 
     setUser(JSON.parse(stored));
 
-    fetch(`${API_URL}/api/certificates`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_URL}/api/certificates?mine=true`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => { if (r.status === 401) { logout(); return null; } return r.json(); })
       .then((data) => { if (data) setCertificates(data); })
       .catch(() => setCertificates([]))
@@ -128,6 +129,9 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-semibold text-slate-800 mb-1">{cert.course_name}</h3>
                 <p className="text-sm text-slate-500 mb-1">{cert.hours} horas academicas</p>
+                {cert.issued_by_name && (
+                  <p className="text-xs text-slate-400 mb-1">Emitido por: {cert.issued_by_name}</p>
+                )}
                 <p className="text-xs text-slate-400 mb-4 font-mono">{cert.verification_code}</p>
                 <button onClick={() => downloadPDF(cert.id)}
                   className="w-full text-center bg-slate-50 text-genes-green py-2 rounded-lg text-sm font-medium hover:bg-genes-green hover:text-white transition">
