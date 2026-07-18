@@ -96,6 +96,7 @@ export default function AdminPanel() {
   const [newCourse, setNewCourse] = useState({ name: '', description: '', hours: 1, instructor: '' });
   const [editCourse, setEditCourse] = useState<Course | null>(null);
   const [editUser, setEditUser] = useState<User | null>(null);
+  const [editPassword, setEditPassword] = useState('');
   const [bulkCert, setBulkCert] = useState({ selectedUserIds: [] as number[], course_id: '', type: 'certificado', issue_date: '' });
   const [formError, setFormError] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -118,12 +119,17 @@ export default function AdminPanel() {
     setFormError('');
     const body: Record<string, unknown> = { full_name: editUser.full_name, dni: editUser.dni, email: editUser.email };
     if (isSuperadmin) { body.role = editUser.role; body.active = editUser.active; }
+    if (editPassword) { body.password = editPassword; }
     const res = await fetch(`${API_URL}/api/users/${editUser.id}`, { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
     if (!res.ok) { setFormError((await res.json()).message); return; }
     setEditUser(null);
+    setEditPassword('');
     setModal(null);
     loadData();
   };
+
+  /** Superadmin cambia contrasenas de cualquiera; el admin solo las de usuarios regulares. */
+  const canResetPassword = (target: User) => isSuperadmin || target.role === 'user';
 
   const createCourse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -440,7 +446,7 @@ export default function AdminPanel() {
                       <td className="px-4 py-3 flex gap-2">
                         {/* Superadmin edita a todos; admin solo a usuarios regulares o a si mismo */}
                         {(isSuperadmin || u.role === 'user' || u.id === currentUser?.id) && (
-                          <button onClick={() => { setEditUser({ ...u }); setFormError(''); setModal('editUser'); }}
+                          <button onClick={() => { setEditUser({ ...u }); setEditPassword(''); setFormError(''); setModal('editUser'); }}
                             className="text-xs text-blue-600 hover:text-blue-800">Editar</button>
                         )}
                         {/* Superadmin gestiona a todos; admin solo a usuarios regulares */}
@@ -500,9 +506,15 @@ export default function AdminPanel() {
                       : 'Se genera del nombre: inicial + primer apellido. Puedes editarlo.'}
                   </p>
                 </div>
-                <input placeholder="Contrasena *" type="password" required value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className={inputClass} />
+                <div>
+                  <input placeholder="Contrasena (opcional)" type="password" value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    className={inputClass} />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Si la dejas vacía, la contraseña inicial será el mismo usuario
+                    {newUser.username ? <> (<span className="font-mono text-slate-500">{newUser.username}</span>)</> : null}.
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <input placeholder="DNI" value={newUser.dni}
                     onChange={(e) => setNewUser({ ...newUser, dni: e.target.value })}
@@ -614,6 +626,26 @@ export default function AdminPanel() {
                     </label>
                   </>
                 )}
+
+                {canResetPassword(editUser) ? (
+                  <div className="pt-1 border-t border-slate-100">
+                    <label className="block text-sm font-medium text-slate-700 mt-3 mb-1">Restablecer contraseña</label>
+                    <input type="password" value={editPassword} autoComplete="new-password"
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      placeholder="Dejar vacío para no cambiarla"
+                      className={inputClass} />
+                    <button type="button"
+                      onClick={() => setEditPassword(editUser.username)}
+                      className="text-xs text-genes-green hover:text-genes-green/80 font-medium mt-1.5">
+                      Usar el nombre de usuario ({editUser.username})
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 pt-1 border-t border-slate-100 mt-3">
+                    Solo un superadministrador puede restablecer la contraseña de un administrador.
+                  </p>
+                )}
+
                 {formError && <p className="text-red-500 text-sm">{formError}</p>}
                 <div className="flex gap-3 justify-end">
                   <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">Cancelar</button>
