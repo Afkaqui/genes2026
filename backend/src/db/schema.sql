@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(100) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   full_name VARCHAR(200) NOT NULL,
-  dni VARCHAR(20),
+  dni VARCHAR(20) UNIQUE,
   email VARCHAR(200),
   role user_role DEFAULT 'user',
   active BOOLEAN DEFAULT true,
