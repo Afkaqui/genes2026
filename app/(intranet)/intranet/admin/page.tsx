@@ -14,6 +14,29 @@ interface Certificate { id: number; type: string; verification_code: string; iss
 
 type Tab = 'certificates' | 'courses' | 'users';
 
+/** Quita tildes/diacriticos y deja solo [a-z0-9]. */
+function slugify(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Vista previa del username que generara el servidor:
+ * inicial del primer nombre + primer apellido. Ej: "Ana Torres Ramirez" -> "atorres".
+ * El backend es quien decide el valor final (y resuelve duplicados con sufijo).
+ */
+function buildUsernameBase(fullName: string): string {
+  const parts = (fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return slugify(parts[0]);
+  const surnameIdx = parts.length >= 4 ? 2 : 1;
+  const initial = slugify(parts[0]).charAt(0);
+  return `${initial}${slugify(parts[surnameIdx])}`;
+}
+
 export default function AdminPanel() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<{ id: number; role: string; full_name: string } | null>(null);
@@ -68,6 +91,8 @@ export default function AdminPanel() {
 
   // --- Forms state ---
   const [newUser, setNewUser] = useState({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
+  // Si el admin edita el usuario a mano, dejamos de autogenerarlo
+  const [usernameTouched, setUsernameTouched] = useState(false);
   const [newCourse, setNewCourse] = useState({ name: '', description: '', hours: 1, instructor: '' });
   const [editCourse, setEditCourse] = useState<Course | null>(null);
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -82,6 +107,7 @@ export default function AdminPanel() {
     const res = await fetch(`${API_URL}/api/users`, { method: 'POST', headers: headers(), body: JSON.stringify(newUser) });
     if (!res.ok) { setFormError((await res.json()).message); return; }
     setNewUser({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
+    setUsernameTouched(false);
     setModal(null);
     loadData();
   };
@@ -373,7 +399,12 @@ export default function AdminPanel() {
           <div>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Usuarios</h2>
-              <button onClick={() => { setFormError(''); setModal('user'); }}
+              <button onClick={() => {
+                  setFormError('');
+                  setNewUser({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
+                  setUsernameTouched(false);
+                  setModal('user');
+                }}
                 className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
                 Agregar Usuario
               </button>
@@ -440,11 +471,35 @@ export default function AdminPanel() {
               <form onSubmit={createUser} className="space-y-4">
                 <h3 className="text-lg font-bold text-slate-800">Nuevo Usuario</h3>
                 <input placeholder="Nombre completo *" required value={newUser.full_name}
-                  onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+                  onChange={(e) => {
+                    const full_name = e.target.value;
+                    setNewUser((prev) => ({
+                      ...prev,
+                      full_name,
+                      username: usernameTouched ? prev.username : buildUsernameBase(full_name),
+                    }));
+                  }}
                   className={inputClass} />
-                <input placeholder="Username *" required value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className={inputClass} />
+                <div>
+                  <input placeholder="Usuario (se genera solo)" value={newUser.username}
+                    onChange={(e) => {
+                      const value = slugify(e.target.value);
+                      if (value === '') {
+                        // Vaciar el campo reanuda la autogeneracion desde el nombre
+                        setUsernameTouched(false);
+                        setNewUser((prev) => ({ ...prev, username: buildUsernameBase(prev.full_name) }));
+                      } else {
+                        setUsernameTouched(true);
+                        setNewUser((prev) => ({ ...prev, username: value }));
+                      }
+                    }}
+                    className={inputClass} />
+                  <p className="text-xs text-slate-400 mt-1">
+                    {usernameTouched
+                      ? 'Editado manualmente. Vacíalo para volver a generarlo automáticamente.'
+                      : 'Se genera del nombre: inicial + primer apellido. Puedes editarlo.'}
+                  </p>
+                </div>
                 <input placeholder="Contrasena *" type="password" required value={newUser.password}
                   onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                   className={inputClass} />
