@@ -22,6 +22,19 @@ function loadAsset(filename: string): string | null {
   return fs.existsSync(p) ? p : null;
 }
 
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/** "19 de junio de 2026" a partir de la fecha calendario, sin usar la zona horaria. */
+function formatFechaLarga(value: string | Date): string {
+  const iso = value instanceof Date ? value.toISOString() : String(value);
+  const [anio, mes, dia] = iso.split('T')[0].split('-');
+  if (!anio || !mes || !dia) return iso;
+  return `${Number(dia)} de ${MESES[Number(mes) - 1]} de ${anio}`;
+}
+
 export function generateCertificatePDF(data: CertificateData): PDFKit.PDFDocument {
   const doc = new PDFDocument({
     size: 'A4',
@@ -117,9 +130,9 @@ export function generateCertificatePDF(data: CertificateData): PDFKit.PDFDocumen
   doc.fontSize(10).font('Helvetica').fillColor(GRAY)
     .text(`Con una duracion de ${data.hours} horas academicas`, contentLeft, detailsY, { align: 'center', width: contentWidth });
 
-  const dateStr = new Date(data.issueDate).toLocaleDateString('es-PE', {
-    year: 'numeric', month: 'long', day: 'numeric',
-  });
+  // issue_date es una fecha calendario: se formatea sin conversion horaria
+  // para que no se corra un dia segun la zona del servidor.
+  const dateStr = formatFechaLarga(data.issueDate);
   doc.text(`Lima, ${dateStr}`, contentLeft, detailsY + 14, { align: 'center', width: contentWidth });
 
   // --- Two signatures side by side ---

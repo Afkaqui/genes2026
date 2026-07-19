@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react';
 import Image from 'next/image';
 import genesLogo from '@/public/logos/genesLogo.png';
+import { formatFechaLarga } from '@/lib/fecha';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -79,9 +80,7 @@ export default function VerificarPage({ params }: { params: Promise<{ code: stri
                 <div className="flex flex-wrap justify-between gap-x-4 py-2 border-b border-slate-100">
                   <span className="text-slate-500">Fecha de emision</span>
                   <span className="font-medium text-slate-800">
-                    {new Date(result.issue_date!).toLocaleDateString('es-PE', {
-                      year: 'numeric', month: 'long', day: 'numeric',
-                    })}
+                    {formatFechaLarga(result.issue_date)}
                   </span>
                 </div>
                 {result.instructor && (

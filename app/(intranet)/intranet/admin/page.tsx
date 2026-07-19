@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import genesLogo from '@/public/logos/genesLogo.png';
+import { formatFechaCertificado } from '@/lib/fecha';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -35,6 +36,57 @@ function buildUsernameBase(fullName: string): string {
   const surnameIdx = parts.length >= 4 ? 2 : 1;
   const initial = slugify(parts[0]).charAt(0);
   return `${initial}${slugify(parts[surnameIdx])}`;
+}
+
+const limpiarNombre = (s: string) => s.replace(/\s+/g, ' ').trim().replace(/[.,;]+$/, '').trim();
+const casoTitulo = (s: string) => (s === s.toUpperCase() ? s.toLowerCase().replace(/(^|\s)\p{L}/gu, (m) => m.toUpperCase()) : s);
+
+/**
+ * Las actas vienen como "APELLIDOS Y NOMBRES"; el sistema guarda "Nombres Apellidos".
+ * Con coma el corte es exacto; sin coma se asume que los 2 primeros terminos son apellidos.
+ */
+function invertirNombre(nombre: string): string {
+  const n = limpiarNombre(nombre);
+  if (!n) return '';
+  let apellidos: string, nombres: string;
+  if (n.includes(',')) {
+    const [a, b = ''] = n.split(',');
+    apellidos = limpiarNombre(a);
+    nombres = limpiarNombre(b);
+  } else {
+    const p = n.split(' ');
+    if (p.length < 3) return casoTitulo(n);
+    apellidos = p.slice(0, 2).join(' ');
+    nombres = p.slice(2).join(' ');
+  }
+  if (!nombres) return casoTitulo(n);
+  return limpiarNombre(`${casoTitulo(nombres)} ${casoTitulo(apellidos)}`);
+}
+
+/** Separa lo pegado desde Excel (TSV) o texto simple. */
+function parsearPegado(texto: string): string[][] {
+  return texto
+    .split(/\r?\n/)
+    .map((l) => (l.includes('\t') ? l.split('\t') : [l]))
+    .map((c) => c.map((x) => x.trim()))
+    .filter((c) => c.some((x) => x));
+}
+
+/** Detecta que columna es el nombre y cual el DNI. */
+function detectarColumnas(filas: string[][]): { nombre: number; dni: number } {
+  const cols = Math.max(...filas.map((f) => f.length), 1);
+  let dni = -1, mejorDni = 0, nombre = 0, mejorNombre = -1;
+  for (let c = 0; c < cols; c++) {
+    let dniHits = 0, nomHits = 0;
+    for (const f of filas) {
+      const v = (f[c] || '').trim();
+      if (/^\d{7,9}$/.test(v)) dniHits++;
+      if (/\p{L}{2,}/u.test(v) && v.split(/[\s,]+/).filter(Boolean).length >= 2) nomHits++;
+    }
+    if (dniHits > mejorDni) { mejorDni = dniHits; dni = c; }
+    if (nomHits > mejorNombre) { mejorNombre = nomHits; nombre = c; }
+  }
+  return { nombre, dni };
 }
 
 export default function AdminPanel() {
@@ -98,6 +150,9 @@ export default function AdminPanel() {
   const [editUser, setEditUser] = useState<User | null>(null);
   const [editPassword, setEditPassword] = useState('');
   const [bulkCert, setBulkCert] = useState({ selectedUserIds: [] as number[], course_id: '', type: 'certificado', issue_date: '' });
+  const [imp, setImp] = useState({ texto: '', invertir: true, course_id: '', type: 'certificado', issue_date: '' });
+  const [impLoading, setImpLoading] = useState(false);
+  const [impResult, setImpResult] = useState<{ creados: number; reutilizados: number; emitidos: number; ya_tenian: number } | null>(null);
   const [formError, setFormError] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ issued: number; skipped: number } | null>(null);
@@ -130,6 +185,66 @@ export default function AdminPanel() {
 
   /** Superadmin cambia contrasenas de cualquiera; el admin solo las de usuarios regulares. */
   const canResetPassword = (target: User) => isSuperadmin || target.role === 'user';
+
+  // --- Importacion de listas ---
+  const impFilas = (() => {
+    const filas = parsearPegado(imp.texto);
+    if (filas.length === 0) return [];
+    const { nombre: cn, dni: cd } = detectarColumnas(filas);
+    const porDni = new Map(users.filter((u) => u.dni).map((u) => [u.dni.trim(), u]));
+    const vistos = new Set<string>();
+
+    return filas
+      .map((f) => {
+        const crudo = (f[cn] || '').trim();
+        const dni = cd >= 0 ? (f[cd] || '').trim() : '';
+        return { crudo, dni };
+      })
+      // descarta encabezados y filas sin nombre real
+      .filter((r) => r.crudo && !/^(apellidos|nombre|n°|nro|dni|item)\b/i.test(r.crudo) && /\p{L}{2,}/u.test(r.crudo))
+      .map((r) => {
+        const nombre = imp.invertir ? invertirNombre(r.crudo) : limpiarNombre(r.crudo);
+        const existente = r.dni ? porDni.get(r.dni) : undefined;
+        const repetido = r.dni ? vistos.has(r.dni) : false;
+        if (r.dni) vistos.add(r.dni);
+        return {
+          crudo: r.crudo,
+          nombre,
+          dni: r.dni,
+          usuario: existente ? existente.username : buildUsernameBase(nombre),
+          estado: repetido ? 'repetido' : existente ? 'existe' : 'nuevo',
+        };
+      });
+  })();
+
+  const runImport = async () => {
+    setFormError('');
+    if (impFilas.length === 0) { setFormError('Pega al menos una fila con nombre'); return; }
+    setImpLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/users/import`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({
+          participants: impFilas
+            .filter((f) => f.estado !== 'repetido')
+            .map((f) => ({ full_name: f.nombre, dni: f.dni })),
+          course_id: imp.course_id ? parseInt(imp.course_id) : undefined,
+          type: imp.type,
+          issue_date: imp.issue_date || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setFormError(data.message); setImpLoading(false); return; }
+      setImpResult({
+        creados: data.usuarios.creados, reutilizados: data.usuarios.reutilizados,
+        emitidos: data.certificados.emitidos, ya_tenian: data.certificados.ya_tenian,
+      });
+      loadData();
+    } catch {
+      setFormError('Error de conexion');
+    }
+    setImpLoading(false);
+  };
 
   const createCourse = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,10 +410,16 @@ export default function AdminPanel() {
           <div>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Certificados Emitidos</h2>
-              <button onClick={() => { setFormError(''); setBulkResult(null); setBulkCert({ selectedUserIds: [], course_id: '', type: 'certificado', issue_date: '' }); setModal('cert'); }}
-                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
-                Emitir Certificados
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <button onClick={() => { setFormError(''); setImpResult(null); setImp({ texto: '', invertir: true, course_id: '', type: 'certificado', issue_date: '' }); setModal('import'); }}
+                  className="border border-genes-green text-genes-green px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/5 transition w-full sm:w-auto">
+                  Importar lista
+                </button>
+                <button onClick={() => { setFormError(''); setBulkResult(null); setBulkCert({ selectedUserIds: [], course_id: '', type: 'certificado', issue_date: '' }); setModal('cert'); }}
+                  className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
+                  Emitir Certificados
+                </button>
+              </div>
             </div>
 
             {certificates.length === 0 ? (
@@ -347,7 +468,7 @@ export default function AdminPanel() {
                                   </td>
                                   <td className="px-4 py-3 text-slate-500">{c.issued_by_name || '—'}</td>
                                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.verification_code}</td>
-                                  <td className="px-4 py-3 text-slate-500">{new Date(c.issue_date).toLocaleDateString('es-PE')}</td>
+                                  <td className="px-4 py-3 text-slate-500">{formatFechaCertificado(c.issue_date)}</td>
                                   {isSuperadmin && (
                                     <td className="px-4 py-3">
                                       <button onClick={() => deleteCert(c.id)} className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
@@ -652,6 +773,124 @@ export default function AdminPanel() {
                   <button type="submit" className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium">Guardar</button>
                 </div>
               </form>
+            )}
+
+            {modal === 'import' && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-800">Importar lista de participantes</h3>
+                <p className="text-sm text-slate-500 -mt-2">
+                  Copia las filas desde el Excel (nombre y DNI) y pégalas aquí. Se crean los usuarios que falten
+                  y, si eliges un curso, se emite su certificado.
+                </p>
+
+                {!impResult && (
+                  <>
+                    <textarea value={imp.texto} rows={5}
+                      onChange={(e) => setImp({ ...imp, texto: e.target.value })}
+                      placeholder={"Pega aquí desde Excel. Ejemplo:\nTolentino Encarnación Abraham\t74362388\nDuran Trujillo, Deysi Rosa\t61599922"}
+                      className={inputClass + ' font-mono text-xs resize-y'} />
+
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={imp.invertir}
+                        onChange={(e) => setImp({ ...imp, invertir: e.target.checked })}
+                        className="w-4 h-4 rounded border-slate-300 text-genes-green focus:ring-genes-green" />
+                      El nombre viene como <strong>Apellidos Nombres</strong> (invertir)
+                    </label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <select value={imp.course_id} onChange={(e) => setImp({ ...imp, course_id: e.target.value })}
+                        className={inputClass}>
+                        <option value="">Sin curso (solo crear usuarios)</option>
+                        {courses.filter((c) => c.active).map((c) => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.hours}h)</option>
+                        ))}
+                      </select>
+                      <select value={imp.type} onChange={(e) => setImp({ ...imp, type: e.target.value })}
+                        className={inputClass} disabled={!imp.course_id}>
+                        <option value="certificado">Certificado</option>
+                        <option value="constancia">Constancia</option>
+                      </select>
+                      <input type="date" value={imp.issue_date} disabled={!imp.course_id}
+                        onChange={(e) => setImp({ ...imp, issue_date: e.target.value })}
+                        className={inputClass} />
+                    </div>
+
+                    {impFilas.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2 text-sm">
+                          <span className="font-medium text-slate-700">Previsualización ({impFilas.length})</span>
+                          <span className="text-xs text-slate-500">
+                            {impFilas.filter((f) => f.estado === 'nuevo').length} nuevos ·{' '}
+                            {impFilas.filter((f) => f.estado === 'existe').length} ya existen
+                            {impFilas.some((f) => f.estado === 'repetido') &&
+                              ` · ${impFilas.filter((f) => f.estado === 'repetido').length} repetidos`}
+                          </span>
+                        </div>
+                        <div className="border border-slate-200 rounded-lg max-h-56 overflow-auto">
+                          <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-slate-50">
+                              <tr className="border-b border-slate-100">
+                                <th className="text-left px-3 py-2 font-medium text-slate-600">Nombre a registrar</th>
+                                <th className="text-left px-3 py-2 font-medium text-slate-600">Usuario</th>
+                                <th className="text-left px-3 py-2 font-medium text-slate-600">DNI</th>
+                                <th className="text-left px-3 py-2 font-medium text-slate-600">Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {impFilas.map((f, i) => (
+                                <tr key={i} className={`border-b border-slate-50 ${
+                                  f.estado === 'repetido' ? 'bg-red-50/60' : f.estado === 'existe' ? 'bg-amber-50/50' : ''
+                                }`}>
+                                  <td className="px-3 py-1.5 text-slate-800">{f.nombre}</td>
+                                  <td className="px-3 py-1.5 font-mono text-slate-500">{f.usuario}</td>
+                                  <td className="px-3 py-1.5 text-slate-500">{f.dni || '—'}</td>
+                                  <td className="px-3 py-1.5">
+                                    <span className={`px-1.5 py-0.5 rounded-full font-medium ${
+                                      f.estado === 'nuevo' ? 'bg-green-50 text-green-700'
+                                      : f.estado === 'existe' ? 'bg-amber-50 text-amber-700'
+                                      : 'bg-red-50 text-red-600'
+                                    }`}>
+                                      {f.estado === 'nuevo' ? 'Nuevo' : f.estado === 'existe' ? 'Ya existe' : 'Repetido'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1.5">
+                          Los repetidos dentro de la lista se omiten. Los que ya existen reutilizan su cuenta.
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {impResult && (
+                  <div className="text-sm px-4 py-3 rounded-lg border bg-green-50 text-green-800 border-green-200 space-y-1">
+                    <p className="font-medium">Importación completada</p>
+                    <p>{impResult.creados} usuarios creados · {impResult.reutilizados} ya existían</p>
+                    {imp.course_id && (
+                      <p>{impResult.emitidos} certificados emitidos
+                        {impResult.ya_tenian > 0 && ` · ${impResult.ya_tenian} ya lo tenían`}</p>
+                    )}
+                  </div>
+                )}
+
+                {formError && <p className="text-red-500 text-sm">{formError}</p>}
+
+                <div className="flex gap-3 justify-end">
+                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">
+                    {impResult ? 'Cerrar' : 'Cancelar'}
+                  </button>
+                  {!impResult && (
+                    <button type="button" onClick={runImport} disabled={impLoading || impFilas.length === 0}
+                      className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                      {impLoading ? 'Importando...' : `Importar (${impFilas.filter((f) => f.estado !== 'repetido').length})`}
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
 
             {modal === 'cert' && (

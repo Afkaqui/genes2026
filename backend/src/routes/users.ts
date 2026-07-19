@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import type { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth';
+import { generateVerificationCode } from '../services/verification';
 
 const router = Router();
 
@@ -53,14 +55,30 @@ function conflictMessage(err: any): string | null {
   return 'Ya existe un registro con esos datos';
 }
 
-/** Devuelve un username libre, agregando sufijo numerico si hace falta. */
-async function findFreeUsername(base: string): Promise<string> {
+type Queryable = Pick<PoolClient, 'query'>;
+
+/**
+ * Devuelve un username libre, agregando sufijo numerico si hace falta.
+ * Acepta un client para que, dentro de una transaccion, vea los usuarios
+ * insertados en el mismo lote y no repita nombres.
+ */
+async function findFreeUsername(base: string, db: Queryable = pool): Promise<string> {
   for (let n = 1; n <= 99; n++) {
     const candidate = n === 1 ? base : `${base}${n}`;
-    const exists = await pool.query('SELECT 1 FROM users WHERE username = $1', [candidate]);
+    const exists = await db.query('SELECT 1 FROM users WHERE username = $1', [candidate]);
     if (exists.rows.length === 0) return candidate;
   }
   return `${base}${Date.now().toString().slice(-5)}`;
+}
+
+/** Codigo de verificacion unico, dentro de la misma transaccion. */
+async function findFreeCode(db: Queryable): Promise<string> {
+  for (let i = 0; i < 12; i++) {
+    const code = generateVerificationCode();
+    const exists = await db.query('SELECT 1 FROM certificates WHERE verification_code = $1', [code]);
+    if (exists.rows.length === 0) return code;
+  }
+  throw new Error('No se pudo generar un codigo de verificacion unico');
 }
 
 router.use(authMiddleware);
@@ -139,6 +157,121 @@ router.post('/', requireRole('admin', 'superadmin'), async (req: AuthRequest, re
     }
     console.error('Error al crear usuario:', err);
     res.status(500).json({ message: 'Error al crear usuario' });
+  }
+});
+
+/**
+ * Importacion masiva de participantes desde una lista pegada.
+ * Crea los usuarios que faltan (reutiliza los que ya existen segun DNI) y,
+ * si se indica un curso, emite el certificado de cada uno.
+ * Todo ocurre en una transaccion: o entra el lote completo, o no entra nada.
+ */
+router.post('/import', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const { participants, course_id, type, issue_date } = req.body;
+
+  if (!Array.isArray(participants) || participants.length === 0) {
+    res.status(400).json({ message: 'Se requiere al menos un participante' });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    let curso: { id: number; hours: number; name: string } | null = null;
+    if (course_id) {
+      const c = await client.query('SELECT id, hours, name FROM courses WHERE id = $1', [course_id]);
+      if (c.rows.length === 0) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ message: 'Curso no encontrado' });
+        return;
+      }
+      curso = c.rows[0];
+    }
+
+    const creados: any[] = [];
+    const reutilizados: any[] = [];
+    const ignorados: any[] = [];
+    const idsParaCertificar: number[] = [];
+
+    for (const p of participants) {
+      const fullName = String(p?.full_name ?? '').trim().replace(/\s+/g, ' ');
+      if (!fullName) {
+        ignorados.push({ motivo: 'Sin nombre', fila: p });
+        continue;
+      }
+      const dni = normalizeDni(typeof p?.dni === 'string' ? p.dni : p?.dni != null ? String(p.dni) : '');
+
+      // Un DNI ya registrado identifica a la persona: se reutiliza su cuenta.
+      let userId: number | null = null;
+      if (dni) {
+        const found = await client.query(
+          'SELECT id, username, full_name, dni FROM users WHERE dni = $1', [dni]
+        );
+        if (found.rows.length > 0) {
+          userId = found.rows[0].id;
+          reutilizados.push(found.rows[0]);
+        }
+      }
+
+      if (userId === null) {
+        const username = await findFreeUsername(buildUsernameBase(fullName), client);
+        const hash = await bcrypt.hash(username, 12); // contrasena inicial = usuario
+        const ins = await client.query(
+          `INSERT INTO users (username, password_hash, full_name, dni, role)
+           VALUES ($1, $2, $3, $4, 'user')
+           RETURNING id, username, full_name, dni`,
+          [username, hash, fullName, dni]
+        );
+        userId = ins.rows[0].id;
+        creados.push(ins.rows[0]);
+      }
+
+      idsParaCertificar.push(userId!);
+    }
+
+    let emitidos = 0;
+    let yaTenian = 0;
+    const certificados: any[] = [];
+
+    if (curso) {
+      for (const uid of idsParaCertificar) {
+        const dup = await client.query(
+          'SELECT 1 FROM certificates WHERE user_id = $1 AND course_id = $2', [uid, curso.id]
+        );
+        if (dup.rows.length > 0) { yaTenian++; continue; }
+
+        const code = await findFreeCode(client);
+        const cert = await client.query(
+          `INSERT INTO certificates (user_id, course_id, type, verification_code, issue_date, hours, issued_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, user_id, verification_code`,
+          [uid, curso.id, type || 'certificado', code,
+           issue_date || new Date().toISOString().split('T')[0], curso.hours, req.user!.userId]
+        );
+        certificados.push(cert.rows[0]);
+        emitidos++;
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      curso: curso ? { id: curso.id, name: curso.name } : null,
+      usuarios: { creados: creados.length, reutilizados: reutilizados.length, ignorados: ignorados.length },
+      certificados: { emitidos, ya_tenian: yaTenian },
+      detalle: { creados, reutilizados, ignorados, certificados },
+    });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    const conflict = conflictMessage(err);
+    if (conflict) {
+      res.status(409).json({ message: `${conflict}. No se importo ningun registro.` });
+      return;
+    }
+    console.error('Error en importacion masiva:', err);
+    res.status(500).json({ message: 'Error al importar participantes' });
+  } finally {
+    client.release();
   }
 });
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import genesLogo from '@/public/logos/genesLogo.png';
+import { formatFechaCertificado } from '@/lib/fecha';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -124,7 +125,7 @@ export default function Dashboard() {
                     {cert.type === 'certificado' ? 'Certificado' : 'Constancia'}
                   </span>
                   <span className="text-xs text-slate-400">
-                    {new Date(cert.issue_date).toLocaleDateString('es-PE')}
+                    {formatFechaCertificado(cert.issue_date)}
                   </span>
                 </div>
                 <h3 className="font-semibold text-slate-800 mb-1">{cert.course_name}</h3>
