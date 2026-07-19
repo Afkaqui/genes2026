@@ -6,6 +6,52 @@ import { generateCertificatePDF } from '../services/pdf';
 
 const router = Router();
 
+/** Arma el PDF y lo envia como descarga. */
+function enviarPdf(res: Response, cert: any): void {
+  const doc = generateCertificatePDF({
+    type: cert.type,
+    fullName: cert.full_name,
+    courseName: cert.course_name,
+    hours: cert.hours,
+    issueDate: cert.issue_date,
+    verificationCode: cert.verification_code,
+    instructor: cert.instructor,
+  });
+
+  const filename = `${cert.type}_${cert.verification_code}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  doc.pipe(res);
+  doc.end();
+}
+
+// Public: descargar el PDF por codigo de verificacion.
+// No requiere sesion: quien tiene el codigo ya puede ver todos estos datos
+// en la pagina de verificacion, asi que el PDF no expone nada adicional.
+router.get('/verify/:code/pdf', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      `SELECT c.type, c.verification_code, c.issue_date, c.hours,
+              u.full_name, co.name as course_name, co.instructor
+       FROM certificates c
+       JOIN users u ON u.id = c.user_id
+       JOIN courses co ON co.id = c.course_id
+       WHERE c.verification_code = $1`,
+      [req.params.code]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ message: 'Certificado no encontrado' });
+      return;
+    }
+
+    enviarPdf(res, result.rows[0]);
+  } catch (err) {
+    console.error('Error al generar PDF publico:', err);
+    res.status(500).json({ message: 'Error al generar PDF' });
+  }
+});
+
 // Public: verify certificate by code
 router.get('/verify/:code', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -204,22 +250,7 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response): Promise<void> =>
       return;
     }
 
-    const cert = result.rows[0];
-    const doc = generateCertificatePDF({
-      type: cert.type,
-      fullName: cert.full_name,
-      courseName: cert.course_name,
-      hours: cert.hours,
-      issueDate: cert.issue_date,
-      verificationCode: cert.verification_code,
-      instructor: cert.instructor,
-    });
-
-    const filename = `${cert.type}_${cert.verification_code}.pdf`;
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    doc.pipe(res);
-    doc.end();
+    enviarPdf(res, result.rows[0]);
   } catch (err) {
     console.error('Error al generar PDF:', err);
     res.status(500).json({ message: 'Error al generar PDF' });

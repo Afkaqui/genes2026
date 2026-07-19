@@ -331,6 +331,10 @@ export default function AdminPanel() {
     loadData();
   };
 
+  const downloadPDF = (certId: number) => {
+    window.open(`${API_URL}/api/certificates/${certId}/pdf?token=${getToken()}`, '_blank');
+  };
+
   const deleteCert = async (id: number) => {
     if (!confirm('Eliminar este certificado?')) return;
     await fetch(`${API_URL}/api/certificates/${id}`, { method: 'DELETE', headers: headers() });
@@ -455,7 +459,7 @@ export default function AdminPanel() {
                               <th className="text-left px-4 py-2.5 font-medium text-slate-600">Emitido por</th>
                               <th className="text-left px-4 py-2.5 font-medium text-slate-600">Codigo</th>
                               <th className="text-left px-4 py-2.5 font-medium text-slate-600">Fecha</th>
-                              {isSuperadmin && <th className="text-left px-4 py-2.5 font-medium text-slate-600">Acciones</th>}
+                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Acciones</th>
                             </tr></thead>
                             <tbody>
                               {group.certs.map((c) => (
@@ -469,11 +473,15 @@ export default function AdminPanel() {
                                   <td className="px-4 py-3 text-slate-500">{c.issued_by_name || '—'}</td>
                                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.verification_code}</td>
                                   <td className="px-4 py-3 text-slate-500">{formatFechaCertificado(c.issue_date)}</td>
-                                  {isSuperadmin && (
-                                    <td className="px-4 py-3">
+                                  <td className="px-4 py-3 flex gap-3">
+                                    <button onClick={() => downloadPDF(c.id)}
+                                      className="text-genes-green hover:text-genes-green/70 text-xs font-medium">
+                                      Descargar
+                                    </button>
+                                    {isSuperadmin && (
                                       <button onClick={() => deleteCert(c.id)} className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
-                                    </td>
-                                  )}
+                                    )}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>

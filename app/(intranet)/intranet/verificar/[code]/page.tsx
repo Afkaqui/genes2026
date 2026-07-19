@@ -90,6 +90,11 @@ export default function VerificarPage({ params }: { params: Promise<{ code: stri
                   </div>
                 )}
               </div>
+
+              <a href={`${API_URL}/api/certificates/verify/${result.verification_code}/pdf`}
+                className="mt-5 block w-full text-center bg-genes-green text-white py-2.5 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition">
+                Descargar PDF
+              </a>
             </div>
           ) : (
             <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
