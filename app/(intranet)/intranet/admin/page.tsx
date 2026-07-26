@@ -11,7 +11,30 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface User { id: number; username: string; full_name: string; dni: string; email: string; role: string; active: boolean; has_logged_in?: boolean; invited_at?: string | null; }
 interface Course { id: number; name: string; description: string; hours: number; instructor: string; active: boolean; creator_name: string; }
-interface Certificate { id: number; type: string; verification_code: string; issue_date: string; hours: number; course_name: string; course_id: number; full_name: string; issued_by_name: string | null; }
+interface Certificate { id: number; type: string; verification_code: string; issue_date: string; hours: number; course_name: string; course_id: number; full_name: string; issued_by_name: string | null; downloaded_at?: string | null; download_count?: number; has_logged_in?: boolean; }
+
+type SortDir = 'asc' | 'desc';
+interface SortState { key: string; dir: SortDir }
+
+/** Compara valores de distinto tipo dejando los vacios al final. */
+function compareValues(a: unknown, b: unknown): number {
+  const vacio = (v: unknown) => v === null || v === undefined || v === '';
+  if (vacio(a) && vacio(b)) return 0;
+  if (vacio(a)) return 1;
+  if (vacio(b)) return -1;
+  // Booleanos como numeros para que todas las columnas de estado ordenen igual:
+  // ascendente deja primero lo pendiente (No / Inactivo / sin descargar).
+  if (typeof a === 'boolean' || typeof b === 'boolean') return Number(a) - Number(b);
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b), 'es', { sensitivity: 'base', numeric: true });
+}
+
+/** Ordena una copia de la lista segun el estado de orden. */
+function sortRows<T>(rows: T[], sort: SortState | null, getValue: (row: T, key: string) => unknown): T[] {
+  if (!sort) return rows;
+  const orden = [...rows].sort((a, b) => compareValues(getValue(a, sort.key), getValue(b, sort.key)));
+  return sort.dir === 'asc' ? orden : orden.reverse();
+}
 
 type Tab = 'certificates' | 'courses' | 'users';
 
@@ -99,6 +122,8 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<string | null>(null);
   const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
+  const [userSort, setUserSort] = useState<SortState | null>({ key: 'full_name', dir: 'asc' });
+  const [certSort, setCertSort] = useState<SortState | null>({ key: 'full_name', dir: 'asc' });
 
   const getToken = () => localStorage.getItem('genes_token');
   const headers = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
@@ -154,7 +179,7 @@ export default function AdminPanel() {
   const [impLoading, setImpLoading] = useState(false);
   const [impResult, setImpResult] = useState<{ creados: number; reutilizados: number; emitidos: number; ya_tenian: number } | null>(null);
   // Campaña de invitaciones (por curso, a quienes nunca ingresaron)
-  interface CampaignStat { course_id: number; course_name: string; total: number; ingresaron: number; pendientes_con_correo: number; pendientes_sin_correo: number; }
+  interface CampaignStat { course_id: number; course_name: string; total: number; ingresaron: number; descargaron: number; pendientes_con_correo: number; pendientes_sin_correo: number; }
   const [campaign, setCampaign] = useState<CampaignStat[]>([]);
   const [campaignLoading, setCampaignLoading] = useState(false);
   const [sendingCourseId, setSendingCourseId] = useState<number | null>(null);
@@ -444,6 +469,38 @@ export default function AdminPanel() {
 
   const inputClass = "w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-genes-green";
 
+  /** Cabecera de tabla que ordena al hacer clic. */
+  const SortableTh = ({ label, sortKey, sort, setSort, className = '' }: {
+    label: string; sortKey: string; sort: SortState | null;
+    setSort: (s: SortState) => void; className?: string;
+  }) => {
+    const activo = sort?.key === sortKey;
+    return (
+      <th className={`text-left font-medium text-slate-600 ${className}`}>
+        <button type="button"
+          onClick={() => setSort({ key: sortKey, dir: activo && sort!.dir === 'asc' ? 'desc' : 'asc' })}
+          className={`flex items-center gap-1 hover:text-genes-green transition ${activo ? 'text-genes-green' : ''}`}
+          title={`Ordenar por ${label.toLowerCase()}`}>
+          {label}
+          <span className={`text-[9px] leading-none ${activo ? '' : 'text-slate-300'}`}>
+            {activo ? (sort!.dir === 'asc' ? '▲' : '▼') : '▲'}
+          </span>
+        </button>
+      </th>
+    );
+  };
+
+  const usersSorted = sortRows(users, userSort, (u, k) => {
+    if (k === 'ingreso') return u.has_logged_in ? 2 : u.invited_at ? 1 : 0;
+    return (u as unknown as Record<string, unknown>)[k];
+  });
+
+  const sortCerts = (list: Certificate[]) => sortRows(list, certSort, (c, k) => {
+    if (k === 'descarga') return c.download_count ?? 0;
+    if (k === 'issue_date') return c.issue_date?.slice(0, 10) ?? '';
+    return (c as unknown as Record<string, unknown>)[k];
+  });
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -529,21 +586,32 @@ export default function AdminPanel() {
                         <div className="overflow-x-auto border-t border-slate-100">
                           <table className="w-full text-sm">
                             <thead><tr className="border-b border-slate-100 bg-slate-50/70">
-                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Participante</th>
-                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Tipo</th>
+                              <SortableTh label="Participante" sortKey="full_name" sort={certSort} setSort={setCertSort} className="px-4 py-2.5" />
+                              <SortableTh label="Tipo" sortKey="type" sort={certSort} setSort={setCertSort} className="px-4 py-2.5" />
+                              <SortableTh label="Descargado" sortKey="descarga" sort={certSort} setSort={setCertSort} className="px-4 py-2.5" />
                               <th className="text-left px-4 py-2.5 font-medium text-slate-600">Emitido por</th>
                               <th className="text-left px-4 py-2.5 font-medium text-slate-600">Codigo</th>
-                              <th className="text-left px-4 py-2.5 font-medium text-slate-600">Fecha</th>
+                              <SortableTh label="Fecha" sortKey="issue_date" sort={certSort} setSort={setCertSort} className="px-4 py-2.5" />
                               <th className="text-left px-4 py-2.5 font-medium text-slate-600">Acciones</th>
                             </tr></thead>
                             <tbody>
-                              {group.certs.map((c) => (
+                              {sortCerts(group.certs).map((c) => (
                                 <tr key={c.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                                   <td className="px-4 py-3 text-slate-800">{c.full_name}</td>
                                   <td className="px-4 py-3">
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                                       c.type === 'certificado' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
                                     }`}>{c.type}</span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {c.download_count ? (
+                                      <span className="text-xs font-medium text-green-600"
+                                        title={`${c.download_count} descarga${c.download_count !== 1 ? 's' : ''} · primera: ${formatFechaCertificado(c.downloaded_at)}`}>
+                                        ✓ Sí{c.download_count > 1 ? ` (${c.download_count})` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-slate-400">No</span>
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-slate-500">{c.issued_by_name || '—'}</td>
                                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{c.verification_code}</td>
@@ -628,16 +696,16 @@ export default function AdminPanel() {
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Nombre</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Usuario</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Correo</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Rol</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Estado</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">Ingresó</th>
+                  <SortableTh label="Nombre" sortKey="full_name" sort={userSort} setSort={setUserSort} className="px-4 py-3" />
+                  <SortableTh label="Usuario" sortKey="username" sort={userSort} setSort={setUserSort} className="px-4 py-3" />
+                  <SortableTh label="Correo" sortKey="email" sort={userSort} setSort={setUserSort} className="px-4 py-3" />
+                  <SortableTh label="Rol" sortKey="role" sort={userSort} setSort={setUserSort} className="px-4 py-3" />
+                  <SortableTh label="Estado" sortKey="active" sort={userSort} setSort={setUserSort} className="px-4 py-3" />
+                  <SortableTh label="Ingresó" sortKey="ingreso" sort={userSort} setSort={setUserSort} className="px-4 py-3" />
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Acciones</th>
                 </tr></thead>
                 <tbody>
-                  {users.map((u) => (
+                  {usersSorted.map((u) => (
                     <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50">
                       <td className="px-4 py-3 text-slate-800">{u.full_name}</td>
                       <td className="px-4 py-3 text-slate-600">{u.username}</td>
@@ -918,8 +986,8 @@ export default function AdminPanel() {
                             <div className="min-w-0">
                               <h4 className="font-semibold text-slate-800 text-sm truncate">{c.course_name}</h4>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                {c.ingresaron} de {c.total} ingresaron
-                                {c.pendientes_sin_correo > 0 && ` · ${c.pendientes_sin_correo} pendientes sin correo`}
+                                {c.ingresaron} de {c.total} ingresaron · {c.descargaron} descargaron
+                                {c.pendientes_sin_correo > 0 && ` · ${c.pendientes_sin_correo} sin correo`}
                               </p>
                             </div>
                             <button

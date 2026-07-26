@@ -6,6 +6,27 @@ import { generateCertificatePDF } from '../services/pdf';
 
 const router = Router();
 
+/**
+ * Registra que el participante obtuvo su certificado. Solo se cuentan las
+ * descargas hechas por el propio dueño o desde la verificacion publica (el
+ * enlace que recibe); las que hace un administrador no prueban que la persona
+ * lo tenga, asi que no se contabilizan.
+ */
+async function registrarDescarga(certId: number): Promise<void> {
+  try {
+    await pool.query(
+      `UPDATE certificates
+          SET download_count = download_count + 1,
+              downloaded_at = COALESCE(downloaded_at, CURRENT_TIMESTAMP)
+        WHERE id = $1`,
+      [certId]
+    );
+  } catch (err) {
+    // No debe impedir la descarga.
+    console.error('No se pudo registrar la descarga:', err);
+  }
+}
+
 /** Arma el PDF y lo envia como descarga. */
 function enviarPdf(res: Response, cert: any): void {
   const doc = generateCertificatePDF({
@@ -31,7 +52,7 @@ function enviarPdf(res: Response, cert: any): void {
 router.get('/verify/:code/pdf', async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
-      `SELECT c.type, c.verification_code, c.issue_date, c.hours,
+      `SELECT c.id, c.type, c.verification_code, c.issue_date, c.hours,
               u.full_name, co.name as course_name, co.instructor
        FROM certificates c
        JOIN users u ON u.id = c.user_id
@@ -45,6 +66,7 @@ router.get('/verify/:code/pdf', async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    await registrarDescarga(result.rows[0].id);
     enviarPdf(res, result.rows[0]);
   } catch (err) {
     console.error('Error al generar PDF publico:', err);
@@ -100,6 +122,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const scopeAll = isAdmin && !onlyMine;
 
     const select = `SELECT c.*, u.full_name, u.dni,
+              u.has_logged_in,
               co.name as course_name, co.instructor,
               iu.full_name as issued_by_name
        FROM certificates c
@@ -250,7 +273,13 @@ router.get('/:id/pdf', async (req: AuthRequest, res: Response): Promise<void> =>
       return;
     }
 
-    enviarPdf(res, result.rows[0]);
+    const cert = result.rows[0];
+    // Solo cuenta como "el participante lo descargo" si lo baja su propio dueño.
+    if (cert.user_id === req.user!.userId) {
+      await registrarDescarga(cert.id);
+    }
+
+    enviarPdf(res, cert);
   } catch (err) {
     console.error('Error al generar PDF:', err);
     res.status(500).json({ message: 'Error al generar PDF' });

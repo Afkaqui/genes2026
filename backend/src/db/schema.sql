@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS certificates (
   issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
   hours INTEGER NOT NULL,
   issued_by INTEGER REFERENCES users(id),
+  -- Descargas hechas por el participante (dashboard o verificacion publica),
+  -- no las que hace un administrador desde el panel.
+  downloaded_at TIMESTAMP,
+  download_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

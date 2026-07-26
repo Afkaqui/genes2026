@@ -358,6 +358,7 @@ router.get('/campaign-stats', requireRole('admin', 'superadmin'), async (_req: A
       `SELECT co.id, co.name,
               count(DISTINCT u.id) AS total,
               count(DISTINCT u.id) FILTER (WHERE u.has_logged_in) AS ingresaron,
+              count(DISTINCT c.id) FILTER (WHERE c.download_count > 0) AS descargaron,
               count(DISTINCT u.id) FILTER (WHERE NOT u.has_logged_in
                     AND u.email IS NOT NULL AND btrim(u.email) <> '') AS pendientes_con_correo,
               count(DISTINCT u.id) FILTER (WHERE NOT u.has_logged_in
@@ -373,6 +374,7 @@ router.get('/campaign-stats', requireRole('admin', 'superadmin'), async (_req: A
       course_name: r.name,
       total: Number(r.total),
       ingresaron: Number(r.ingresaron),
+      descargaron: Number(r.descargaron),
       pendientes_con_correo: Number(r.pendientes_con_correo),
       pendientes_sin_correo: Number(r.pendientes_sin_correo),
     })));
