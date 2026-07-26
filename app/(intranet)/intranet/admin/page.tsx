@@ -9,7 +9,7 @@ import { formatFechaCertificado } from '@/lib/fecha';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-interface User { id: number; username: string; full_name: string; dni: string; email: string; role: string; active: boolean; }
+interface User { id: number; username: string; full_name: string; dni: string; email: string; role: string; active: boolean; has_logged_in?: boolean; invited_at?: string | null; }
 interface Course { id: number; name: string; description: string; hours: number; instructor: string; active: boolean; creator_name: string; }
 interface Certificate { id: number; type: string; verification_code: string; issue_date: string; hours: number; course_name: string; course_id: number; full_name: string; issued_by_name: string | null; }
 
@@ -153,6 +153,10 @@ export default function AdminPanel() {
   const [imp, setImp] = useState({ texto: '', invertir: true, course_id: '', type: 'certificado', issue_date: '' });
   const [impLoading, setImpLoading] = useState(false);
   const [impResult, setImpResult] = useState<{ creados: number; reutilizados: number; emitidos: number; ya_tenian: number } | null>(null);
+  // Invitaciones por correo
+  const [invit, setInvit] = useState({ course_id: '', selectedUserIds: [] as number[], reset_password: false });
+  const [invitLoading, setInvitLoading] = useState(false);
+  const [invitResult, setInvitResult] = useState<{ enviados: number; sin_correo: number; fallidos: number } | null>(null);
   const [formError, setFormError] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ issued: number; skipped: number } | null>(null);
@@ -185,6 +189,52 @@ export default function AdminPanel() {
 
   /** Superadmin cambia contrasenas de cualquiera; el admin solo las de usuarios regulares. */
   const canResetPassword = (target: User) => isSuperadmin || target.role === 'user';
+
+  // --- Invitaciones por correo ---
+  /** Usuarios candidatos a invitar, filtrados por el curso elegido (si hay). */
+  const invitCandidatos = (() => {
+    if (!invit.course_id) return users;
+    const cid = parseInt(invit.course_id);
+    const idsDelCurso = new Set(
+      certificates.filter((c) => c.course_id === cid).map((c) => c.full_name)
+    );
+    // Los certificados no traen user_id; se cruza por nombre (unico en la practica).
+    return users.filter((u) => idsDelCurso.has(u.full_name));
+  })();
+
+  const toggleInvitUser = (uid: number) =>
+    setInvit((prev) => ({
+      ...prev,
+      selectedUserIds: prev.selectedUserIds.includes(uid)
+        ? prev.selectedUserIds.filter((id) => id !== uid)
+        : [...prev.selectedUserIds, uid],
+    }));
+
+  const selectAllInvit = () => {
+    const conCorreo = invitCandidatos.filter((u) => u.email).map((u) => u.id);
+    const todos = conCorreo.every((id) => invit.selectedUserIds.includes(id));
+    setInvit((prev) => ({ ...prev, selectedUserIds: todos ? [] : conCorreo }));
+  };
+
+  const sendInvitations = async () => {
+    setFormError('');
+    if (invit.selectedUserIds.length === 0) { setFormError('Selecciona al menos un usuario con correo'); return; }
+    setInvitLoading(true);
+    setInvitResult(null);
+    try {
+      const res = await fetch(`${API_URL}/api/users/send-invitations`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ user_ids: invit.selectedUserIds, reset_password: invit.reset_password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setFormError(data.message); setInvitLoading(false); return; }
+      setInvitResult({ enviados: data.enviados, sin_correo: data.sin_correo, fallidos: data.fallidos });
+      loadData();
+    } catch {
+      setFormError('Error de conexion');
+    }
+    setInvitLoading(false);
+  };
 
   // --- Importacion de listas ---
   const impFilas = (() => {
@@ -534,24 +584,35 @@ export default function AdminPanel() {
           <div>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Usuarios</h2>
-              <button onClick={() => {
-                  setFormError('');
-                  setNewUser({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
-                  setUsernameTouched(false);
-                  setModal('user');
-                }}
-                className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
-                Agregar Usuario
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                <button onClick={() => {
+                    setFormError(''); setInvitResult(null);
+                    setInvit({ course_id: '', selectedUserIds: [], reset_password: false });
+                    setModal('invite');
+                  }}
+                  className="border border-genes-green text-genes-green px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/5 transition w-full sm:w-auto">
+                  Enviar invitaciones
+                </button>
+                <button onClick={() => {
+                    setFormError('');
+                    setNewUser({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
+                    setUsernameTouched(false);
+                    setModal('user');
+                  }}
+                  className="bg-genes-green text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/90 transition w-full sm:w-auto">
+                  Agregar Usuario
+                </button>
+              </div>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-slate-100 bg-slate-50">
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Nombre</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Usuario</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-600">DNI</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Correo</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Rol</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Estado</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-600">Ingresó</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-600">Acciones</th>
                 </tr></thead>
                 <tbody>
@@ -559,7 +620,11 @@ export default function AdminPanel() {
                     <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50">
                       <td className="px-4 py-3 text-slate-800">{u.full_name}</td>
                       <td className="px-4 py-3 text-slate-600">{u.username}</td>
-                      <td className="px-4 py-3 text-slate-500">{u.dni || '—'}</td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {u.email
+                          ? <span className="text-slate-600">{u.email}</span>
+                          : <span className="text-xs text-red-400">sin correo</span>}
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                           u.role === 'superadmin' ? 'bg-purple-50 text-purple-700'
@@ -571,6 +636,15 @@ export default function AdminPanel() {
                         <span className={`text-xs ${u.active ? 'text-green-600' : 'text-red-500'}`}>
                           {u.active ? 'Activo' : 'Inactivo'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {u.has_logged_in ? (
+                          <span className="text-xs font-medium text-green-600">✓ Sí</span>
+                        ) : u.invited_at ? (
+                          <span className="text-xs text-amber-600" title={`Invitado el ${formatFechaCertificado(u.invited_at)}`}>Invitado</span>
+                        ) : (
+                          <span className="text-xs text-slate-400">No</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 flex gap-2">
                         {/* Superadmin edita a todos; admin solo a usuarios regulares o a si mismo */}
@@ -781,6 +855,101 @@ export default function AdminPanel() {
                   <button type="submit" className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium">Guardar</button>
                 </div>
               </form>
+            )}
+
+            {modal === 'invite' && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-800">Enviar invitaciones por correo</h3>
+                <p className="text-sm text-slate-500 -mt-2">
+                  Envía a cada persona su usuario y contraseña inicial para que ingrese a la intranet
+                  y descargue sus certificados. Solo se envía a quienes tienen correo registrado.
+                </p>
+
+                {!invitResult && (
+                  <>
+                    <select value={invit.course_id}
+                      onChange={(e) => setInvit({ ...invit, course_id: e.target.value, selectedUserIds: [] })}
+                      className={inputClass}>
+                      <option value="">Todos los usuarios</option>
+                      {courses.map((c) => (
+                        <option key={c.id} value={c.id}>Participantes de: {c.name}</option>
+                      ))}
+                    </select>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-slate-700">
+                          Destinatarios ({invit.selectedUserIds.length} seleccionados)
+                        </span>
+                        <button type="button" onClick={selectAllInvit}
+                          className="text-xs text-genes-green hover:text-genes-green/80 font-medium">
+                          {invitCandidatos.filter((u) => u.email).every((u) => invit.selectedUserIds.includes(u.id)) && invitCandidatos.some((u) => u.email)
+                            ? 'Deseleccionar todos' : 'Seleccionar todos con correo'}
+                        </button>
+                      </div>
+                      <div className="border border-slate-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-slate-100">
+                        {invitCandidatos.map((u) => (
+                          <label key={u.id}
+                            className={`flex items-center gap-3 px-3 py-2.5 ${u.email ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60'}`}>
+                            <input type="checkbox" disabled={!u.email}
+                              checked={invit.selectedUserIds.includes(u.id)}
+                              onChange={() => toggleInvitUser(u.id)}
+                              className="w-4 h-4 rounded border-slate-300 text-genes-green focus:ring-genes-green shrink-0 disabled:opacity-40" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm text-slate-800 truncate">{u.full_name}</p>
+                              <p className="text-xs text-slate-400 truncate">
+                                {u.email || 'sin correo — no se puede invitar'}
+                              </p>
+                            </div>
+                            {u.has_logged_in && <span className="text-[10px] text-green-600 shrink-0">ya ingresó</span>}
+                            {!u.has_logged_in && u.invited_at && <span className="text-[10px] text-amber-600 shrink-0">invitado</span>}
+                          </label>
+                        ))}
+                        {invitCandidatos.length === 0 && (
+                          <p className="text-sm text-slate-400 text-center py-4">No hay usuarios en este grupo</p>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1.5">
+                        {invitCandidatos.filter((u) => !u.email).length > 0 &&
+                          `${invitCandidatos.filter((u) => !u.email).length} sin correo (agrégalo con "Editar" para poder invitarlos). `}
+                        La contraseña enviada es igual al usuario.
+                      </p>
+                    </div>
+
+                    <label className="flex items-start gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={invit.reset_password}
+                        onChange={(e) => setInvit({ ...invit, reset_password: e.target.checked })}
+                        className="w-4 h-4 mt-0.5 rounded border-slate-300 text-genes-green focus:ring-genes-green" />
+                      <span>Restablecer la contraseña al usuario antes de enviar
+                        <span className="block text-xs text-slate-400">Úsalo si alguno ya la cambió y quieres garantizar que la credencial enviada funcione.</span>
+                      </span>
+                    </label>
+                  </>
+                )}
+
+                {invitResult && (
+                  <div className="text-sm px-4 py-3 rounded-lg border bg-green-50 text-green-800 border-green-200 space-y-1">
+                    <p className="font-medium">Invitaciones procesadas</p>
+                    <p>{invitResult.enviados} enviadas
+                      {invitResult.sin_correo > 0 && ` · ${invitResult.sin_correo} sin correo`}
+                      {invitResult.fallidos > 0 && ` · ${invitResult.fallidos} fallidas`}</p>
+                  </div>
+                )}
+
+                {formError && <p className="text-red-500 text-sm">{formError}</p>}
+
+                <div className="flex gap-3 justify-end">
+                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">
+                    {invitResult ? 'Cerrar' : 'Cancelar'}
+                  </button>
+                  {!invitResult && (
+                    <button type="button" onClick={sendInvitations} disabled={invitLoading || invit.selectedUserIds.length === 0}
+                      className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                      {invitLoading ? 'Enviando...' : `Enviar (${invit.selectedUserIds.length})`}
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
 
             {modal === 'import' && (

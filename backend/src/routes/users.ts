@@ -4,6 +4,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import { authMiddleware, requireRole, AuthRequest } from '../middleware/auth';
 import { generateVerificationCode } from '../services/verification';
+import { sendInvitation, mailerConfigured } from '../services/mailer';
 
 const router = Router();
 
@@ -86,7 +87,9 @@ router.use(authMiddleware);
 router.get('/', requireRole('admin', 'superadmin'), async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
-      'SELECT id, username, full_name, dni, email, role, active, created_at FROM users ORDER BY created_at DESC'
+      `SELECT id, username, full_name, dni, email, role, active,
+              has_logged_in, first_login_at, invited_at, created_at
+       FROM users ORDER BY created_at DESC`
     );
     res.json(result.rows);
   } catch (err) {
@@ -272,6 +275,78 @@ router.post('/import', requireRole('admin', 'superadmin'), async (req: AuthReque
     res.status(500).json({ message: 'Error al importar participantes' });
   } finally {
     client.release();
+  }
+});
+
+/**
+ * Envia por correo la invitacion de acceso (usuario + contrasena inicial) a un
+ * bloque de usuarios. La contrasena inicial es el propio username; por eso, para
+ * garantizar que la credencial enviada funcione, opcionalmente se restablece.
+ */
+router.post('/send-invitations', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const { user_ids, reset_password } = req.body;
+
+  if (!Array.isArray(user_ids) || user_ids.length === 0) {
+    res.status(400).json({ message: 'Se requiere al menos un usuario' });
+    return;
+  }
+  if (!mailerConfigured()) {
+    res.status(503).json({ message: 'El envio de correos no esta configurado (falta RESEND_API_KEY)' });
+    return;
+  }
+
+  const isSuperadmin = req.user!.role === 'superadmin';
+  const enviados: any[] = [];
+  const sinCorreo: any[] = [];
+  const fallidos: any[] = [];
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, username, full_name, email, role FROM users WHERE id = ANY($1::int[])`,
+      [user_ids]
+    );
+
+    for (const u of rows) {
+      // Un admin solo invita a usuarios regulares.
+      if (!isSuperadmin && u.role !== 'user') {
+        fallidos.push({ id: u.id, full_name: u.full_name, motivo: 'Sin permiso sobre este usuario' });
+        continue;
+      }
+      if (!u.email || !u.email.trim()) {
+        sinCorreo.push({ id: u.id, full_name: u.full_name });
+        continue;
+      }
+
+      try {
+        // La contrasena a comunicar es el username (valor inicial por defecto).
+        if (reset_password) {
+          const hash = await bcrypt.hash(u.username, 12);
+          await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hash, u.id]);
+        }
+
+        await sendInvitation({
+          fullName: u.full_name,
+          username: u.username,
+          password: u.username,
+          email: u.email.trim(),
+        });
+
+        await pool.query('UPDATE users SET invited_at = CURRENT_TIMESTAMP WHERE id = $1', [u.id]);
+        enviados.push({ id: u.id, full_name: u.full_name, email: u.email });
+      } catch (e: any) {
+        fallidos.push({ id: u.id, full_name: u.full_name, motivo: e?.message || 'Error al enviar' });
+      }
+    }
+
+    res.json({
+      enviados: enviados.length,
+      sin_correo: sinCorreo.length,
+      fallidos: fallidos.length,
+      detalle: { enviados, sinCorreo, fallidos },
+    });
+  } catch (err) {
+    console.error('Error al enviar invitaciones:', err);
+    res.status(500).json({ message: 'Error al enviar invitaciones' });
   }
 });
 

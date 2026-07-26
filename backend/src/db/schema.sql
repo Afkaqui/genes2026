@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(200),
   role user_role DEFAULT 'user',
   active BOOLEAN DEFAULT true,
+  has_logged_in BOOLEAN NOT NULL DEFAULT false,
+  first_login_at TIMESTAMP,
+  invited_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

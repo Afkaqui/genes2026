@@ -40,6 +40,15 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Registra el primer ingreso a la plataforma (para saber quien ya accedio).
+    await pool.query(
+      `UPDATE users
+         SET has_logged_in = true,
+             first_login_at = COALESCE(first_login_at, CURRENT_TIMESTAMP)
+       WHERE id = $1`,
+      [user.id]
+    );
+
     const token = jwt.sign(
       { userId: user.id, username: user.username, role: user.role },
       JWT_SECRET,
