@@ -159,6 +159,9 @@ export default function AdminPanel() {
   const [campaignLoading, setCampaignLoading] = useState(false);
   const [sendingCourseId, setSendingCourseId] = useState<number | null>(null);
   const [campaignMsg, setCampaignMsg] = useState<{ course_id: number; text: string; ok: boolean } | null>(null);
+  // Reenvio individual del acceso desde la fila del usuario
+  const [invitingId, setInvitingId] = useState<number | null>(null);
+  const [rowMsg, setRowMsg] = useState<{ id: number; text: string; ok: boolean } | null>(null);
   const [formError, setFormError] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ issued: number; skipped: number } | null>(null);
@@ -202,6 +205,30 @@ export default function AdminPanel() {
       if (res.ok) setCampaign(await res.json());
     } catch { /* ignore */ }
     setCampaignLoading(false);
+  };
+
+  /** Reenvia el acceso a un solo usuario (por si perdio el primer correo). */
+  const invitarUsuario = async (u: User) => {
+    setRowMsg(null);
+    setInvitingId(u.id);
+    try {
+      const res = await fetch(`${API_URL}/api/users/send-invitations`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ user_ids: [u.id] }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRowMsg({ id: u.id, text: data.message || 'Error al enviar', ok: false });
+      } else if (data.enviados > 0) {
+        setRowMsg({ id: u.id, text: 'Correo enviado', ok: true });
+        loadData();
+      } else {
+        setRowMsg({ id: u.id, text: data.sin_correo ? 'Sin correo' : 'No se pudo enviar', ok: false });
+      }
+    } catch {
+      setRowMsg({ id: u.id, text: 'Error de conexión', ok: false });
+    }
+    setInvitingId(null);
   };
 
   const sendCampaign = async (courseId: number) => {
@@ -640,22 +667,36 @@ export default function AdminPanel() {
                           <span className="text-xs text-slate-400">No</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 flex gap-2">
-                        {/* Superadmin edita a todos; admin solo a usuarios regulares o a si mismo */}
-                        {(isSuperadmin || u.role === 'user' || u.id === currentUser?.id) && (
-                          <button onClick={() => { setEditUser({ ...u }); setEditPassword(''); setFormError(''); setModal('editUser'); }}
-                            className="text-xs text-blue-600 hover:text-blue-800">Editar</button>
-                        )}
-                        {/* Superadmin gestiona a todos; admin solo a usuarios regulares */}
-                        {(isSuperadmin || u.role === 'user') && u.id !== currentUser?.id && (
-                          <>
-                            <button onClick={() => toggleUserActive(u)}
-                              className="text-xs text-amber-600 hover:text-amber-800">
-                              {u.active ? 'Desactivar' : 'Activar'}
-                            </button>
-                            <button onClick={() => deleteUser(u.id)} className="text-xs text-red-500 hover:text-red-700">Eliminar</button>
-                          </>
-                        )}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Superadmin edita a todos; admin solo a usuarios regulares o a si mismo */}
+                          {(isSuperadmin || u.role === 'user' || u.id === currentUser?.id) && (
+                            <button onClick={() => { setEditUser({ ...u }); setEditPassword(''); setFormError(''); setModal('editUser'); }}
+                              className="text-xs text-blue-600 hover:text-blue-800">Editar</button>
+                          )}
+                          {/* Reenvio individual del acceso (por si perdio el primer correo) */}
+                          {(isSuperadmin || u.role === 'user') && u.email && (
+                            rowMsg?.id === u.id ? (
+                              <span className={`text-xs ${rowMsg.ok ? 'text-green-600' : 'text-red-500'}`}>{rowMsg.text}</span>
+                            ) : (
+                              <button onClick={() => invitarUsuario(u)} disabled={invitingId === u.id}
+                                className="text-xs text-genes-green hover:text-genes-green/70 disabled:opacity-50"
+                                title="Enviar el acceso a su correo">
+                                {invitingId === u.id ? 'Enviando...' : u.invited_at ? 'Reenviar' : 'Enviar acceso'}
+                              </button>
+                            )
+                          )}
+                          {/* Superadmin gestiona a todos; admin solo a usuarios regulares */}
+                          {(isSuperadmin || u.role === 'user') && u.id !== currentUser?.id && (
+                            <>
+                              <button onClick={() => toggleUserActive(u)}
+                                className="text-xs text-amber-600 hover:text-amber-800">
+                                {u.active ? 'Desactivar' : 'Activar'}
+                              </button>
+                              <button onClick={() => deleteUser(u.id)} className="text-xs text-red-500 hover:text-red-700">Eliminar</button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
