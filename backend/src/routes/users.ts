@@ -278,10 +278,50 @@ router.post('/import', requireRole('admin', 'superadmin'), async (req: AuthReque
   }
 });
 
+interface InvitableUser { id: number; username: string; full_name: string; email: string | null; role: string; }
+
+/** Envia la invitacion a cada usuario del lote y devuelve el desglose. */
+async function enviarInvitacionesLote(
+  rows: InvitableUser[], resetPassword: boolean, isSuperadmin: boolean
+): Promise<{ enviados: any[]; sinCorreo: any[]; fallidos: any[] }> {
+  const enviados: any[] = [];
+  const sinCorreo: any[] = [];
+  const fallidos: any[] = [];
+
+  for (const u of rows) {
+    // Un admin solo invita a usuarios regulares.
+    if (!isSuperadmin && u.role !== 'user') {
+      fallidos.push({ id: u.id, full_name: u.full_name, motivo: 'Sin permiso sobre este usuario' });
+      continue;
+    }
+    if (!u.email || !u.email.trim()) {
+      sinCorreo.push({ id: u.id, full_name: u.full_name });
+      continue;
+    }
+    try {
+      // La contrasena a comunicar es el username (valor inicial por defecto).
+      if (resetPassword) {
+        const hash = await bcrypt.hash(u.username, 12);
+        await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hash, u.id]);
+      }
+      await sendInvitation({
+        fullName: u.full_name,
+        username: u.username,
+        password: u.username,
+        email: u.email.trim(),
+      });
+      await pool.query('UPDATE users SET invited_at = CURRENT_TIMESTAMP WHERE id = $1', [u.id]);
+      enviados.push({ id: u.id, full_name: u.full_name, email: u.email });
+    } catch (e: any) {
+      fallidos.push({ id: u.id, full_name: u.full_name, motivo: e?.message || 'Error al enviar' });
+    }
+  }
+  return { enviados, sinCorreo, fallidos };
+}
+
 /**
  * Envia por correo la invitacion de acceso (usuario + contrasena inicial) a un
- * bloque de usuarios. La contrasena inicial es el propio username; por eso, para
- * garantizar que la credencial enviada funcione, opcionalmente se restablece.
+ * bloque de usuarios elegido manualmente.
  */
 router.post('/send-invitations', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
   const { user_ids, reset_password } = req.body;
@@ -295,58 +335,91 @@ router.post('/send-invitations', requireRole('admin', 'superadmin'), async (req:
     return;
   }
 
-  const isSuperadmin = req.user!.role === 'superadmin';
-  const enviados: any[] = [];
-  const sinCorreo: any[] = [];
-  const fallidos: any[] = [];
-
   try {
     const { rows } = await pool.query(
       `SELECT id, username, full_name, email, role FROM users WHERE id = ANY($1::int[])`,
       [user_ids]
     );
-
-    for (const u of rows) {
-      // Un admin solo invita a usuarios regulares.
-      if (!isSuperadmin && u.role !== 'user') {
-        fallidos.push({ id: u.id, full_name: u.full_name, motivo: 'Sin permiso sobre este usuario' });
-        continue;
-      }
-      if (!u.email || !u.email.trim()) {
-        sinCorreo.push({ id: u.id, full_name: u.full_name });
-        continue;
-      }
-
-      try {
-        // La contrasena a comunicar es el username (valor inicial por defecto).
-        if (reset_password) {
-          const hash = await bcrypt.hash(u.username, 12);
-          await pool.query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hash, u.id]);
-        }
-
-        await sendInvitation({
-          fullName: u.full_name,
-          username: u.username,
-          password: u.username,
-          email: u.email.trim(),
-        });
-
-        await pool.query('UPDATE users SET invited_at = CURRENT_TIMESTAMP WHERE id = $1', [u.id]);
-        enviados.push({ id: u.id, full_name: u.full_name, email: u.email });
-      } catch (e: any) {
-        fallidos.push({ id: u.id, full_name: u.full_name, motivo: e?.message || 'Error al enviar' });
-      }
-    }
-
-    res.json({
-      enviados: enviados.length,
-      sin_correo: sinCorreo.length,
-      fallidos: fallidos.length,
-      detalle: { enviados, sinCorreo, fallidos },
-    });
+    const r = await enviarInvitacionesLote(rows, Boolean(reset_password), req.user!.role === 'superadmin');
+    res.json({ enviados: r.enviados.length, sin_correo: r.sinCorreo.length, fallidos: r.fallidos.length, detalle: r });
   } catch (err) {
     console.error('Error al enviar invitaciones:', err);
     res.status(500).json({ message: 'Error al enviar invitaciones' });
+  }
+});
+
+/**
+ * Estado de campana por curso: cuantos participantes ingresaron y cuantos
+ * siguen pendientes (nunca ingresaron), para decidir a quien reenviar.
+ */
+router.get('/campaign-stats', requireRole('admin', 'superadmin'), async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT co.id, co.name,
+              count(DISTINCT u.id) AS total,
+              count(DISTINCT u.id) FILTER (WHERE u.has_logged_in) AS ingresaron,
+              count(DISTINCT u.id) FILTER (WHERE NOT u.has_logged_in
+                    AND u.email IS NOT NULL AND btrim(u.email) <> '') AS pendientes_con_correo,
+              count(DISTINCT u.id) FILTER (WHERE NOT u.has_logged_in
+                    AND (u.email IS NULL OR btrim(u.email) = '')) AS pendientes_sin_correo
+       FROM courses co
+       JOIN certificates c ON c.course_id = co.id
+       JOIN users u ON u.id = c.user_id AND u.role = 'user'
+       GROUP BY co.id, co.name
+       ORDER BY co.name`
+    );
+    res.json(rows.map((r) => ({
+      course_id: r.id,
+      course_name: r.name,
+      total: Number(r.total),
+      ingresaron: Number(r.ingresaron),
+      pendientes_con_correo: Number(r.pendientes_con_correo),
+      pendientes_sin_correo: Number(r.pendientes_sin_correo),
+    })));
+  } catch (err) {
+    console.error('Error en campaign-stats:', err);
+    res.status(500).json({ message: 'Error al obtener el estado de las campanas' });
+  }
+});
+
+/**
+ * Campana por curso: envia la invitacion a los participantes de ese curso que
+ * NUNCA ingresaron y tienen correo. Es el reenvio dirigido de la campana.
+ */
+router.post('/send-campaign', requireRole('admin', 'superadmin'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const { course_id, reset_password } = req.body;
+
+  if (!course_id) {
+    res.status(400).json({ message: 'Se requiere el curso' });
+    return;
+  }
+  if (!mailerConfigured()) {
+    res.status(503).json({ message: 'El envio de correos no esta configurado (falta RESEND_API_KEY)' });
+    return;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT u.id, u.username, u.full_name, u.email, u.role
+       FROM certificates c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.course_id = $1
+         AND u.role = 'user'
+         AND NOT u.has_logged_in
+         AND u.email IS NOT NULL AND btrim(u.email) <> ''`,
+      [course_id]
+    );
+
+    if (rows.length === 0) {
+      res.json({ enviados: 0, sin_correo: 0, fallidos: 0, mensaje: 'No hay participantes pendientes con correo en este curso' });
+      return;
+    }
+
+    const r = await enviarInvitacionesLote(rows, Boolean(reset_password), req.user!.role === 'superadmin');
+    res.json({ enviados: r.enviados.length, sin_correo: r.sinCorreo.length, fallidos: r.fallidos.length, detalle: r });
+  } catch (err) {
+    console.error('Error en send-campaign:', err);
+    res.status(500).json({ message: 'Error al enviar la campana' });
   }
 });
 

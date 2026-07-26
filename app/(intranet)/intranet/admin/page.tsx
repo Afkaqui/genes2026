@@ -153,10 +153,12 @@ export default function AdminPanel() {
   const [imp, setImp] = useState({ texto: '', invertir: true, course_id: '', type: 'certificado', issue_date: '' });
   const [impLoading, setImpLoading] = useState(false);
   const [impResult, setImpResult] = useState<{ creados: number; reutilizados: number; emitidos: number; ya_tenian: number } | null>(null);
-  // Invitaciones por correo
-  const [invit, setInvit] = useState({ course_id: '', selectedUserIds: [] as number[], reset_password: false });
-  const [invitLoading, setInvitLoading] = useState(false);
-  const [invitResult, setInvitResult] = useState<{ enviados: number; sin_correo: number; fallidos: number } | null>(null);
+  // Campaña de invitaciones (por curso, a quienes nunca ingresaron)
+  interface CampaignStat { course_id: number; course_name: string; total: number; ingresaron: number; pendientes_con_correo: number; pendientes_sin_correo: number; }
+  const [campaign, setCampaign] = useState<CampaignStat[]>([]);
+  const [campaignLoading, setCampaignLoading] = useState(false);
+  const [sendingCourseId, setSendingCourseId] = useState<number | null>(null);
+  const [campaignMsg, setCampaignMsg] = useState<{ course_id: number; text: string; ok: boolean } | null>(null);
   const [formError, setFormError] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ issued: number; skipped: number } | null>(null);
@@ -190,50 +192,46 @@ export default function AdminPanel() {
   /** Superadmin cambia contrasenas de cualquiera; el admin solo las de usuarios regulares. */
   const canResetPassword = (target: User) => isSuperadmin || target.role === 'user';
 
-  // --- Invitaciones por correo ---
-  /** Usuarios candidatos a invitar, filtrados por el curso elegido (si hay). */
-  const invitCandidatos = (() => {
-    if (!invit.course_id) return users;
-    const cid = parseInt(invit.course_id);
-    const idsDelCurso = new Set(
-      certificates.filter((c) => c.course_id === cid).map((c) => c.full_name)
-    );
-    // Los certificados no traen user_id; se cruza por nombre (unico en la practica).
-    return users.filter((u) => idsDelCurso.has(u.full_name));
-  })();
-
-  const toggleInvitUser = (uid: number) =>
-    setInvit((prev) => ({
-      ...prev,
-      selectedUserIds: prev.selectedUserIds.includes(uid)
-        ? prev.selectedUserIds.filter((id) => id !== uid)
-        : [...prev.selectedUserIds, uid],
-    }));
-
-  const selectAllInvit = () => {
-    const conCorreo = invitCandidatos.filter((u) => u.email).map((u) => u.id);
-    const todos = conCorreo.every((id) => invit.selectedUserIds.includes(id));
-    setInvit((prev) => ({ ...prev, selectedUserIds: todos ? [] : conCorreo }));
+  // --- Campaña de invitaciones ---
+  const openCampaign = async () => {
+    setCampaignMsg(null);
+    setModal('campaign');
+    setCampaignLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/users/campaign-stats`, { headers: headers() });
+      if (res.ok) setCampaign(await res.json());
+    } catch { /* ignore */ }
+    setCampaignLoading(false);
   };
 
-  const sendInvitations = async () => {
-    setFormError('');
-    if (invit.selectedUserIds.length === 0) { setFormError('Selecciona al menos un usuario con correo'); return; }
-    setInvitLoading(true);
-    setInvitResult(null);
+  const sendCampaign = async (courseId: number) => {
+    setCampaignMsg(null);
+    setSendingCourseId(courseId);
     try {
-      const res = await fetch(`${API_URL}/api/users/send-invitations`, {
+      const res = await fetch(`${API_URL}/api/users/send-campaign`, {
         method: 'POST', headers: headers(),
-        body: JSON.stringify({ user_ids: invit.selectedUserIds, reset_password: invit.reset_password }),
+        body: JSON.stringify({ course_id: courseId }),
       });
       const data = await res.json();
-      if (!res.ok) { setFormError(data.message); setInvitLoading(false); return; }
-      setInvitResult({ enviados: data.enviados, sin_correo: data.sin_correo, fallidos: data.fallidos });
-      loadData();
+      if (!res.ok) {
+        setCampaignMsg({ course_id: courseId, text: data.message || 'Error al enviar', ok: false });
+      } else if (data.enviados === 0) {
+        setCampaignMsg({ course_id: courseId, text: data.mensaje || 'No había pendientes con correo', ok: true });
+      } else {
+        setCampaignMsg({
+          course_id: courseId, ok: true,
+          text: `${data.enviados} invitación${data.enviados !== 1 ? 'es' : ''} enviada${data.enviados !== 1 ? 's' : ''}` +
+            (data.fallidos > 0 ? ` · ${data.fallidos} con error` : ''),
+        });
+        // refresca stats y la tabla de usuarios
+        const stats = await fetch(`${API_URL}/api/users/campaign-stats`, { headers: headers() });
+        if (stats.ok) setCampaign(await stats.json());
+        loadData();
+      }
     } catch {
-      setFormError('Error de conexion');
+      setCampaignMsg({ course_id: courseId, text: 'Error de conexión', ok: false });
     }
-    setInvitLoading(false);
+    setSendingCourseId(null);
   };
 
   // --- Importacion de listas ---
@@ -585,13 +583,9 @@ export default function AdminPanel() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
               <h2 className="text-xl font-bold text-slate-800">Usuarios</h2>
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                <button onClick={() => {
-                    setFormError(''); setInvitResult(null);
-                    setInvit({ course_id: '', selectedUserIds: [], reset_password: false });
-                    setModal('invite');
-                  }}
+                <button onClick={openCampaign}
                   className="border border-genes-green text-genes-green px-4 py-2 rounded-lg text-sm font-medium hover:bg-genes-green/5 transition w-full sm:w-auto">
-                  Enviar invitaciones
+                  Campaña de acceso
                 </button>
                 <button onClick={() => {
                     setFormError('');
@@ -857,97 +851,66 @@ export default function AdminPanel() {
               </form>
             )}
 
-            {modal === 'invite' && (
+            {modal === 'campaign' && (
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-slate-800">Enviar invitaciones por correo</h3>
+                <h3 className="text-lg font-bold text-slate-800">Campaña de acceso</h3>
                 <p className="text-sm text-slate-500 -mt-2">
-                  Envía a cada persona su usuario y contraseña inicial para que ingrese a la intranet
-                  y descargue sus certificados. Solo se envía a quienes tienen correo registrado.
+                  Reenvía el acceso a los participantes de cada curso que <strong>aún no ingresaron</strong>.
+                  Cada uno recibe su usuario y contraseña para entrar y descargar su certificado.
                 </p>
 
-                {!invitResult && (
-                  <>
-                    <select value={invit.course_id}
-                      onChange={(e) => setInvit({ ...invit, course_id: e.target.value, selectedUserIds: [] })}
-                      className={inputClass}>
-                      <option value="">Todos los usuarios</option>
-                      {courses.map((c) => (
-                        <option key={c.id} value={c.id}>Participantes de: {c.name}</option>
-                      ))}
-                    </select>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-slate-700">
-                          Destinatarios ({invit.selectedUserIds.length} seleccionados)
-                        </span>
-                        <button type="button" onClick={selectAllInvit}
-                          className="text-xs text-genes-green hover:text-genes-green/80 font-medium">
-                          {invitCandidatos.filter((u) => u.email).every((u) => invit.selectedUserIds.includes(u.id)) && invitCandidatos.some((u) => u.email)
-                            ? 'Deseleccionar todos' : 'Seleccionar todos con correo'}
-                        </button>
-                      </div>
-                      <div className="border border-slate-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-slate-100">
-                        {invitCandidatos.map((u) => (
-                          <label key={u.id}
-                            className={`flex items-center gap-3 px-3 py-2.5 ${u.email ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60'}`}>
-                            <input type="checkbox" disabled={!u.email}
-                              checked={invit.selectedUserIds.includes(u.id)}
-                              onChange={() => toggleInvitUser(u.id)}
-                              className="w-4 h-4 rounded border-slate-300 text-genes-green focus:ring-genes-green shrink-0 disabled:opacity-40" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-slate-800 truncate">{u.full_name}</p>
-                              <p className="text-xs text-slate-400 truncate">
-                                {u.email || 'sin correo — no se puede invitar'}
+                {campaignLoading ? (
+                  <div className="py-10 flex justify-center">
+                    <div className="animate-spin rounded-full h-7 w-7 border-4 border-genes-green border-t-transparent" />
+                  </div>
+                ) : campaign.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-8">No hay cursos con participantes todavía.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {campaign.map((c) => {
+                      const progreso = c.total > 0 ? Math.round((c.ingresaron / c.total) * 100) : 0;
+                      const msg = campaignMsg?.course_id === c.course_id ? campaignMsg : null;
+                      const enviando = sendingCourseId === c.course_id;
+                      return (
+                        <div key={c.course_id} className="border border-slate-200 rounded-xl p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-slate-800 text-sm truncate">{c.course_name}</h4>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                {c.ingresaron} de {c.total} ingresaron
+                                {c.pendientes_sin_correo > 0 && ` · ${c.pendientes_sin_correo} pendientes sin correo`}
                               </p>
                             </div>
-                            {u.has_logged_in && <span className="text-[10px] text-green-600 shrink-0">ya ingresó</span>}
-                            {!u.has_logged_in && u.invited_at && <span className="text-[10px] text-amber-600 shrink-0">invitado</span>}
-                          </label>
-                        ))}
-                        {invitCandidatos.length === 0 && (
-                          <p className="text-sm text-slate-400 text-center py-4">No hay usuarios en este grupo</p>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1.5">
-                        {invitCandidatos.filter((u) => !u.email).length > 0 &&
-                          `${invitCandidatos.filter((u) => !u.email).length} sin correo (agrégalo con "Editar" para poder invitarlos). `}
-                        La contraseña enviada es igual al usuario.
-                      </p>
-                    </div>
+                            <button
+                              onClick={() => sendCampaign(c.course_id)}
+                              disabled={enviando || c.pendientes_con_correo === 0}
+                              className="shrink-0 bg-genes-green text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-genes-green/90 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                              {enviando ? 'Enviando...'
+                                : c.pendientes_con_correo === 0 ? 'Sin pendientes'
+                                : `Enviar a ${c.pendientes_con_correo}`}
+                            </button>
+                          </div>
 
-                    <label className="flex items-start gap-2 text-sm text-slate-700">
-                      <input type="checkbox" checked={invit.reset_password}
-                        onChange={(e) => setInvit({ ...invit, reset_password: e.target.checked })}
-                        className="w-4 h-4 mt-0.5 rounded border-slate-300 text-genes-green focus:ring-genes-green" />
-                      <span>Restablecer la contraseña al usuario antes de enviar
-                        <span className="block text-xs text-slate-400">Úsalo si alguno ya la cambió y quieres garantizar que la credencial enviada funcione.</span>
-                      </span>
-                    </label>
-                  </>
-                )}
+                          <div className="mt-2.5 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-genes-green rounded-full transition-all" style={{ width: `${progreso}%` }} />
+                          </div>
 
-                {invitResult && (
-                  <div className="text-sm px-4 py-3 rounded-lg border bg-green-50 text-green-800 border-green-200 space-y-1">
-                    <p className="font-medium">Invitaciones procesadas</p>
-                    <p>{invitResult.enviados} enviadas
-                      {invitResult.sin_correo > 0 && ` · ${invitResult.sin_correo} sin correo`}
-                      {invitResult.fallidos > 0 && ` · ${invitResult.fallidos} fallidas`}</p>
+                          {msg && (
+                            <p className={`text-xs mt-2 ${msg.ok ? 'text-green-600' : 'text-red-500'}`}>{msg.text}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
-                {formError && <p className="text-red-500 text-sm">{formError}</p>}
+                <p className="text-xs text-slate-400">
+                  Solo se envía a quienes tienen correo registrado. Los que ya ingresaron no reciben nada.
+                  La contraseña enviada es igual al usuario.
+                </p>
 
-                <div className="flex gap-3 justify-end">
-                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">
-                    {invitResult ? 'Cerrar' : 'Cancelar'}
-                  </button>
-                  {!invitResult && (
-                    <button type="button" onClick={sendInvitations} disabled={invitLoading || invit.selectedUserIds.length === 0}
-                      className="px-4 py-2 bg-genes-green text-white rounded-lg text-sm font-medium disabled:opacity-50">
-                      {invitLoading ? 'Enviando...' : `Enviar (${invit.selectedUserIds.length})`}
-                    </button>
-                  )}
+                <div className="flex justify-end">
+                  <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-600">Cerrar</button>
                 </div>
               </div>
             )}
