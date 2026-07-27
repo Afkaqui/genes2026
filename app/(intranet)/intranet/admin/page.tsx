@@ -61,6 +61,16 @@ function buildUsernameBase(fullName: string): string {
   return `${initial}${slugify(parts[surnameIdx])}`;
 }
 
+/** Normaliza para buscar: sin tildes, minusculas y con espacios colapsados. */
+function normalizarBusqueda(value: string): string {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const limpiarNombre = (s: string) => s.replace(/\s+/g, ' ').trim().replace(/[.,;]+$/, '').trim();
 const casoTitulo = (s: string) => (s === s.toUpperCase() ? s.toLowerCase().replace(/(^|\s)\p{L}/gu, (m) => m.toUpperCase()) : s);
 
@@ -122,6 +132,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<string | null>(null);
   const [expandedCourses, setExpandedCourses] = useState<Record<number, boolean>>({});
+  const [userQuery, setUserQuery] = useState('');
   const [userSort, setUserSort] = useState<SortState | null>({ key: 'full_name', dir: 'asc' });
   const [certSort, setCertSort] = useState<SortState | null>({ key: 'full_name', dir: 'asc' });
 
@@ -490,7 +501,24 @@ export default function AdminPanel() {
     );
   };
 
-  const usersSorted = sortRows(users, userSort, (u, k) => {
+  /**
+   * Filtra por DNI (uso principal: la persona da su documento) y tambien por
+   * nombre, usuario o correo, para no obligar a conocer el DNI exacto.
+   */
+  const usersFiltrados = (() => {
+    const q = normalizarBusqueda(userQuery);
+    if (!q) return users;
+    const soloDigitos = q.replace(/\D/g, '');
+    return users.filter((u) => {
+      const dni = (u.dni || '').replace(/\D/g, '');
+      if (soloDigitos && dni.includes(soloDigitos)) return true;
+      return [u.full_name, u.username, u.email].some(
+        (campo) => campo && normalizarBusqueda(campo).includes(q)
+      );
+    });
+  })();
+
+  const usersSorted = sortRows(usersFiltrados, userSort, (u, k) => {
     if (k === 'ingreso') return u.has_logged_in ? 2 : u.invited_at ? 1 : 0;
     return (u as unknown as Record<string, unknown>)[k];
   });
@@ -693,6 +721,32 @@ export default function AdminPanel() {
                 </button>
               </div>
             </div>
+
+            {/* Buscador: DNI, nombre, usuario o correo */}
+            <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="relative w-full sm:max-w-sm">
+                <input value={userQuery} type="search"
+                  onChange={(e) => setUserQuery(e.target.value)}
+                  placeholder="Buscar por DNI, nombre o usuario"
+                  aria-label="Buscar usuarios por DNI, nombre o usuario"
+                  className={inputClass + ' pr-8'} />
+                {userQuery && (
+                  <button type="button" onClick={() => setUserQuery('')}
+                    aria-label="Limpiar búsqueda"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm leading-none">
+                    ✕
+                  </button>
+                )}
+              </div>
+              {userQuery && (
+                <p className="text-xs text-slate-500">
+                  {usersFiltrados.length === 0
+                    ? 'Sin resultados'
+                    : `${usersFiltrados.length} de ${users.length} usuario${users.length !== 1 ? 's' : ''}`}
+                </p>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-slate-100 bg-slate-50">
@@ -770,6 +824,11 @@ export default function AdminPanel() {
                   ))}
                 </tbody>
               </table>
+              {usersSorted.length === 0 && (
+                <p className="text-center text-slate-400 py-8 text-sm">
+                  Ningún usuario coincide con &ldquo;{userQuery}&rdquo;
+                </p>
+              )}
             </div>
           </div>
         )}
