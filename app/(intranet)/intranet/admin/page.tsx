@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import genesLogo from '@/public/logos/genesLogo.png';
-import { formatFechaCertificado } from '@/lib/fecha';
+import { formatFechaCertificado, formatFechaHora } from '@/lib/fecha';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-interface User { id: number; username: string; full_name: string; dni: string; email: string; role: string; active: boolean; has_logged_in?: boolean; invited_at?: string | null; }
+interface User { id: number; username: string; full_name: string; dni: string; email: string; role: string; active: boolean; has_logged_in?: boolean; first_login_at?: string | null; invited_at?: string | null; }
 interface Course { id: number; name: string; description: string; hours: number; instructor: string; active: boolean; creator_name: string; }
 interface Certificate { id: number; type: string; verification_code: string; issue_date: string; hours: number; course_name: string; course_id: number; full_name: string; issued_by_name: string | null; downloaded_at?: string | null; download_count?: number; has_logged_in?: boolean; }
 
@@ -640,7 +640,7 @@ export default function AdminPanel() {
                                   <td className="px-4 py-3">
                                     {c.download_count ? (
                                       <span className="text-xs font-medium text-green-600"
-                                        title={`${c.download_count} descarga${c.download_count !== 1 ? 's' : ''} · primera: ${formatFechaCertificado(c.downloaded_at)}`}>
+                                        title={`${c.download_count} descarga${c.download_count !== 1 ? 's' : ''} · primera: ${formatFechaHora(c.downloaded_at)}`}>
                                         ✓ Sí{c.download_count > 1 ? ` (${c.download_count})` : ''}
                                       </span>
                                     ) : (
@@ -786,11 +786,23 @@ export default function AdminPanel() {
                           {u.active ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {u.has_logged_in ? (
-                          <span className="text-xs font-medium text-green-600">✓ Sí</span>
+                          <>
+                            <span className="text-xs font-medium text-green-600">✓ Sí</span>
+                            {u.first_login_at && (
+                              <span className="block text-[11px] text-slate-400 tabular-nums">
+                                {formatFechaHora(u.first_login_at)}
+                              </span>
+                            )}
+                          </>
                         ) : u.invited_at ? (
-                          <span className="text-xs text-amber-600" title={`Invitado el ${formatFechaCertificado(u.invited_at)}`}>Invitado</span>
+                          <>
+                            <span className="text-xs text-amber-600">Invitado</span>
+                            <span className="block text-[11px] text-slate-400 tabular-nums">
+                              {formatFechaHora(u.invited_at)}
+                            </span>
+                          </>
                         ) : (
                           <span className="text-xs text-slate-400">No</span>
                         )}
