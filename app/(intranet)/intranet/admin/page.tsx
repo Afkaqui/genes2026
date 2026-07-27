@@ -205,7 +205,10 @@ export default function AdminPanel() {
   const createUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
-    const res = await fetch(`${API_URL}/api/users`, { method: 'POST', headers: headers(), body: JSON.stringify(newUser) });
+    const res = await fetch(`${API_URL}/api/users`, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ ...newUser, password: newUser.password.trim() }),
+    });
     if (!res.ok) { setFormError((await res.json()).message); return; }
     setNewUser({ username: '', password: '', full_name: '', dni: '', email: '', role: 'user' });
     setUsernameTouched(false);
@@ -219,7 +222,10 @@ export default function AdminPanel() {
     setFormError('');
     const body: Record<string, unknown> = { full_name: editUser.full_name, dni: editUser.dni, email: editUser.email };
     if (isSuperadmin) { body.role = editUser.role; body.active = editUser.active; }
-    if (editPassword) { body.password = editPassword; }
+    // Se recortan los extremos: un espacio pegado por accidente dejaria una
+    // contrasena imposible de teclear de nuevo.
+    const nuevaClave = editPassword.trim();
+    if (nuevaClave) { body.password = nuevaClave; }
     const res = await fetch(`${API_URL}/api/users/${editUser.id}`, { method: 'PUT', headers: headers(), body: JSON.stringify(body) });
     if (!res.ok) { setFormError((await res.json()).message); return; }
     setEditUser(null);

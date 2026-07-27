@@ -17,8 +17,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
+    // Tolerante a espacios y mayusculas: un usuario cargado como "akaqui " no
+    // debe quedar inaccesible porque la persona teclea "akaqui". La contrasena
+    // se sigue comparando de forma exacta.
     const result = await pool.query(
-      'SELECT id, username, password_hash, full_name, role, active FROM users WHERE username = $1',
+      `SELECT id, username, password_hash, full_name, role, active
+         FROM users
+        WHERE lower(btrim(username)) = lower(btrim($1))
+        LIMIT 1`,
       [username]
     );
 
