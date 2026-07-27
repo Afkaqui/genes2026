@@ -4,9 +4,10 @@ Lista de mejoras y tareas pendientes por implementar.
 
 ## UX / Navegación
 
-- [ ] **Buscador / filtro** en la lista de usuarios y en certificados del panel admin.
-      Útil cuando crezca la cantidad de registros. Debería permitir filtrar por nombre,
-      username, DNI (usuarios) y por participante o curso (certificados).
+- [x] **Buscador en la lista de usuarios** — por DNI, nombre, usuario o correo.
+- [ ] **Buscador en certificados** del panel admin (por participante o curso).
+      Hoy están agrupados por curso y con columnas ordenables, que ya cubre buena
+      parte del caso; el buscador ayudaría cuando crezcan mucho los registros.
 
 ## Ideas propuestas (a evaluar)
 
